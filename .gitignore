@@ -1,0 +1,15 @@
+.env
+.env.*
+*.pem
+*.key
+*.secret
+rsa_binance.private
+rsa_binance_*.private
+
+user_data/configs/volatility_rotation_mr_private.json
+user_data/configs/volatility_rotation_mr_private.*.json
+!user_data/configs/volatility_rotation_mr_private.example.json
+
+user_data/backtest_results/*
+!user_data/backtest_results/.gitkeep
+

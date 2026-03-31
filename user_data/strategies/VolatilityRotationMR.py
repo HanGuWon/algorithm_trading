@@ -53,6 +53,8 @@ class VolatilityRotationMR(IStrategy):
     live_min_orderbook_imbalance = 0.05
     live_max_abs_funding_rate = 0.0005
     stake_risk_fraction = 0.005
+    min_order_buffer = 1.05
+    binance_min_notional = 5.0
 
     rsi_long_threshold = IntParameter(20, 40, default=30, space="buy", optimize=True)
     rsi_short_threshold = IntParameter(60, 85, default=70, space="buy", optimize=True)
@@ -129,18 +131,73 @@ class VolatilityRotationMR(IStrategy):
         cumulative_volume = dataframe["volume"].groupby(session).cumsum().replace(0.0, np.nan)
         return cumulative_tpv / cumulative_volume
 
+    @staticmethod
+    def _timeframe_to_minutes(timeframe: str) -> int:
+        if timeframe.endswith("m"):
+            return int(timeframe[:-1])
+        if timeframe.endswith("h"):
+            return int(timeframe[:-1]) * 60
+        if timeframe.endswith("d"):
+            return int(timeframe[:-1]) * 60 * 24
+        raise ValueError(f"Unsupported timeframe for minute conversion: {timeframe}")
+
+    def _get_market_limits(self, pair: str) -> dict[str, float]:
+        if not self.dp or not hasattr(self.dp, "market"):
+            return {"min_qty": 0.0, "min_notional": 0.0}
+
+        try:
+            market = self.dp.market(pair)
+        except Exception:
+            return {"min_qty": 0.0, "min_notional": 0.0}
+
+        if not market:
+            return {"min_qty": 0.0, "min_notional": 0.0}
+
+        limits = market.get("limits") or {}
+        amount_limits = limits.get("amount") or {}
+        cost_limits = limits.get("cost") or {}
+        return {
+            "min_qty": float(amount_limits.get("min") or 0.0),
+            "min_notional": float(cost_limits.get("min") or 0.0),
+        }
+
+    def _apply_min_order_guard(
+        self,
+        pair: str,
+        stake: float,
+        current_rate: float,
+        min_stake: float | None,
+        max_stake: float,
+    ) -> float:
+        limits = self._get_market_limits(pair)
+        required_min_stake = float(min_stake) if min_stake is not None else 0.0
+        required_min_stake = max(
+            required_min_stake,
+            float(self.binance_min_notional) * float(self.min_order_buffer),
+            limits["min_notional"] * float(self.min_order_buffer),
+        )
+        if current_rate > 0 and limits["min_qty"] > 0:
+            required_min_stake = max(
+                required_min_stake,
+                limits["min_qty"] * current_rate * float(self.min_order_buffer),
+            )
+
+        clipped_stake = min(max_stake, max(0.0, stake))
+        if clipped_stake < required_min_stake:
+            if required_min_stake > max_stake:
+                return 0.0
+            return required_min_stake
+        return clipped_stake
+
     def _populate_informative_indicators(self, dataframe: DataFrame) -> DataFrame:
         dataframe["ema50"] = ta.EMA(dataframe, timeperiod=50)
         dataframe["ema200"] = ta.EMA(dataframe, timeperiod=200)
         dataframe["adx"] = ta.ADX(dataframe, timeperiod=14)
-        dataframe["atr"] = ta.ATR(dataframe, timeperiod=14)
-        dataframe["natr"] = self._safe_div(dataframe["atr"], dataframe["close"])
 
         bb_mid, bb_upper, bb_lower = self._bollinger(dataframe["close"], self.bb_window, self.bb_std)
         dataframe["bb_mid"] = bb_mid
         dataframe["bb_upper"] = bb_upper
         dataframe["bb_lower"] = bb_lower
-        dataframe["bb_width"] = self._safe_div(bb_upper - bb_lower, bb_mid)
         dataframe["ema50_slope"] = self._safe_div(dataframe["ema50"].diff(), dataframe["ema50"].shift(1))
         return dataframe
 
@@ -154,12 +211,9 @@ class VolatilityRotationMR(IStrategy):
             "ema50_1h",
             "ema200_1h",
             "adx_1h",
-            "atr_1h",
-            "natr_1h",
             "bb_mid_1h",
             "bb_upper_1h",
             "bb_lower_1h",
-            "bb_width_1h",
             "ema50_slope_1h",
         ]
         for column in informative_columns:
@@ -169,15 +223,9 @@ class VolatilityRotationMR(IStrategy):
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         dataframe["rsi"] = ta.RSI(dataframe, timeperiod=14)
-        rsi_min = dataframe["rsi"].rolling(14, min_periods=14).min()
-        rsi_max = dataframe["rsi"].rolling(14, min_periods=14).max()
-        dataframe["stoch_rsi"] = self._safe_div(dataframe["rsi"] - rsi_min, rsi_max - rsi_min)
-
         dataframe["atr"] = ta.ATR(dataframe, timeperiod=14)
         dataframe["natr"] = self._safe_div(dataframe["atr"], dataframe["close"])
-        dataframe["adx"] = ta.ADX(dataframe, timeperiod=14)
         dataframe["ema20"] = ta.EMA(dataframe, timeperiod=20)
-        dataframe["ema50"] = ta.EMA(dataframe, timeperiod=50)
 
         bb_mid, bb_upper, bb_lower = self._bollinger(dataframe["close"], self.bb_window, self.bb_std)
         dataframe["bb_mid"] = bb_mid
@@ -482,12 +530,12 @@ class VolatilityRotationMR(IStrategy):
         _ = (current_time, current_rate, entry_tag, side)
         last_candle = self._get_last_candle(pair)
         if last_candle is None:
-            return proposed_stake
+            return self._apply_min_order_guard(pair, proposed_stake, current_rate, min_stake, max_stake)
 
         atr = float(last_candle.get("atr", 0.0) or 0.0)
         close = float(last_candle.get("close", current_rate) or current_rate)
         if atr <= 0 or close <= 0:
-            return proposed_stake
+            return self._apply_min_order_guard(pair, proposed_stake, current_rate, min_stake, max_stake)
 
         stop_ratio = max((atr * float(self.atr_stop_mult.value)) / close, 0.001)
         try:
@@ -498,9 +546,7 @@ class VolatilityRotationMR(IStrategy):
         risk_budget = total_stake * self.stake_risk_fraction
         denominator = max(stop_ratio * max(leverage, 1.0), 0.001)
         stake = risk_budget / denominator
-
-        lower_bound = float(min_stake) if min_stake is not None else 0.0
-        return max(lower_bound, min(max_stake, stake))
+        return self._apply_min_order_guard(pair, stake, current_rate, min_stake, max_stake)
 
     def custom_stoploss(
         self,
@@ -564,7 +610,7 @@ class VolatilityRotationMR(IStrategy):
         **kwargs,
     ) -> str | None:
         _ = (pair, current_rate, current_profit)
-        candle_minutes = 5
+        candle_minutes = self._timeframe_to_minutes(self.timeframe)
         elapsed_minutes = max(int((current_time - trade.open_date_utc).total_seconds() // 60), 0)
         if elapsed_minutes >= int(self.time_stop_candles.value) * candle_minutes:
             return "time_stop"

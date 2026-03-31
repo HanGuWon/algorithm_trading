@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.freqtrade.io/schema.json",
+  "exchange": {
+    "key": "BINANCE_API_KEY_PLACEHOLDER",
+    "secret": "BINANCE_API_SECRET_OR_RSA_PRIVATE_KEY_PLACEHOLDER",
+    "password": ""
+  }
+}
