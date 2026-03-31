@@ -5,6 +5,7 @@
   ],
   "dry_run": false,
   "db_url": "sqlite:///user_data/tradesv3_volatility_rotation_mr_live.sqlite",
+  "stoploss_price_type": "mark",
   "order_types": {
     "entry": "limit",
     "exit": "limit",
@@ -12,6 +13,7 @@
     "force_entry": "market",
     "force_exit": "market",
     "stoploss": "market",
-    "stoploss_on_exchange": true
+    "stoploss_on_exchange": true,
+    "stoploss_on_exchange_interval": 60
   }
 }

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import math
 from datetime import datetime
 from typing import Any
 
@@ -17,6 +19,8 @@ from freqtrade.strategy import (
     merge_informative_pair,
     stoploss_from_absolute,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class VolatilityRotationMR(IStrategy):
@@ -124,6 +128,15 @@ class VolatilityRotationMR(IStrategy):
     def _to_bool(condition: Series) -> Series:
         return condition.fillna(False).astype(bool)
 
+    @staticmethod
+    def _coerce_float(value: Any, default: float = 0.0) -> float:
+        try:
+            if value is None:
+                return default
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
     def _session_vwap(self, dataframe: DataFrame) -> Series:
         typical_price = qtpylib.typical_price(dataframe)
         session = dataframe["date"].dt.floor("1D")
@@ -141,24 +154,115 @@ class VolatilityRotationMR(IStrategy):
             return int(timeframe[:-1]) * 60 * 24
         raise ValueError(f"Unsupported timeframe for minute conversion: {timeframe}")
 
-    def _get_market_limits(self, pair: str) -> dict[str, float]:
+    def _extract_amount_step(self, market: dict[str, Any]) -> float:
+        info = market.get("info") or {}
+        filters = info.get("filters") or []
+        if isinstance(filters, list):
+            for filter_item in filters:
+                if not isinstance(filter_item, dict):
+                    continue
+                if filter_item.get("filterType") in {"LOT_SIZE", "MARKET_LOT_SIZE"}:
+                    step_size = self._coerce_float(filter_item.get("stepSize"))
+                    if step_size > 0:
+                        return step_size
+
+        precision = (market.get("precision") or {}).get("amount")
+        if isinstance(precision, int) and precision >= 0:
+            return 10 ** (-precision)
+        if isinstance(precision, float) and precision > 0:
+            return precision
+        return 0.0
+
+    def _log_missing_market_metadata(self, pair: str) -> None:
+        missing_pairs = getattr(self, "_missing_market_metadata_pairs", set())
+        if pair in missing_pairs:
+            return
+        missing_pairs.add(pair)
+        setattr(self, "_missing_market_metadata_pairs", missing_pairs)
+        logger.warning(
+            "Falling back to conservative Binance futures order guard for %s because market metadata is unavailable.",
+            pair,
+        )
+
+    @staticmethod
+    def _normalize_amount_to_step(amount: float, step: float) -> float:
+        normalized_amount = max(amount, 0.0)
+        if step <= 0:
+            return normalized_amount
+        steps = math.floor((normalized_amount / step) + 1e-12)
+        return max(0.0, steps * step)
+
+    def _get_market_limits(self, pair: str) -> dict[str, float | bool]:
         if not self.dp or not hasattr(self.dp, "market"):
-            return {"min_qty": 0.0, "min_notional": 0.0}
+            return {
+                "metadata_available": False,
+                "min_qty": 0.0,
+                "min_notional": 0.0,
+                "contract_size": 1.0,
+                "qty_step": 0.0,
+            }
 
         try:
             market = self.dp.market(pair)
         except Exception:
-            return {"min_qty": 0.0, "min_notional": 0.0}
+            return {
+                "metadata_available": False,
+                "min_qty": 0.0,
+                "min_notional": 0.0,
+                "contract_size": 1.0,
+                "qty_step": 0.0,
+            }
 
         if not market:
-            return {"min_qty": 0.0, "min_notional": 0.0}
+            return {
+                "metadata_available": False,
+                "min_qty": 0.0,
+                "min_notional": 0.0,
+                "contract_size": 1.0,
+                "qty_step": 0.0,
+            }
 
         limits = market.get("limits") or {}
         amount_limits = limits.get("amount") or {}
         cost_limits = limits.get("cost") or {}
         return {
-            "min_qty": float(amount_limits.get("min") or 0.0),
-            "min_notional": float(cost_limits.get("min") or 0.0),
+            "metadata_available": True,
+            "min_qty": self._coerce_float(amount_limits.get("min")),
+            "min_notional": self._coerce_float(cost_limits.get("min")),
+            "contract_size": max(
+                self._coerce_float(market.get("contractSize") or market.get("contract_size"), 1.0),
+                1.0,
+            ),
+            "qty_step": self._extract_amount_step(market),
+        }
+
+    def _evaluate_order_size(self, pair: str, amount: float, rate: float) -> dict[str, float | bool]:
+        limits = self._get_market_limits(pair)
+        if not bool(limits["metadata_available"]):
+            self._log_missing_market_metadata(pair)
+
+        rate = max(rate, 0.0)
+        contract_size = float(limits["contract_size"])
+        qty_step = float(limits["qty_step"])
+        effective_amount = self._normalize_amount_to_step(amount, qty_step)
+        effective_amount = effective_amount if effective_amount > 0 else max(amount, 0.0)
+        min_qty = max(float(limits["min_qty"]), qty_step)
+        min_notional = max(float(self.binance_min_notional), float(limits["min_notional"]))
+        effective_notional = effective_amount * rate * contract_size
+
+        is_valid = effective_amount > 0
+        if min_qty > 0 and effective_amount < min_qty:
+            is_valid = False
+        if min_notional > 0 and effective_notional < min_notional:
+            is_valid = False
+
+        return {
+            "is_valid": is_valid,
+            "normalized_amount": effective_amount,
+            "min_qty": min_qty,
+            "min_notional": min_notional,
+            "effective_notional": effective_notional,
+            "contract_size": contract_size,
         }
 
     def _apply_min_order_guard(
@@ -168,26 +272,43 @@ class VolatilityRotationMR(IStrategy):
         current_rate: float,
         min_stake: float | None,
         max_stake: float,
+        leverage: float,
     ) -> float:
         limits = self._get_market_limits(pair)
+        if not bool(limits["metadata_available"]):
+            self._log_missing_market_metadata(pair)
+
+        effective_leverage = max(leverage, 1.0)
+        contract_size = float(limits["contract_size"])
+        min_qty = max(float(limits["min_qty"]), float(limits["qty_step"]))
+        min_notional = max(float(self.binance_min_notional), float(limits["min_notional"]))
+        required_notional = min_notional
+        if current_rate > 0 and min_qty > 0:
+            required_notional = max(required_notional, min_qty * current_rate * contract_size)
+
         required_min_stake = float(min_stake) if min_stake is not None else 0.0
         required_min_stake = max(
             required_min_stake,
-            float(self.binance_min_notional) * float(self.min_order_buffer),
-            limits["min_notional"] * float(self.min_order_buffer),
+            (required_notional / effective_leverage) * float(self.min_order_buffer),
         )
-        if current_rate > 0 and limits["min_qty"] > 0:
-            required_min_stake = max(
-                required_min_stake,
-                limits["min_qty"] * current_rate * float(self.min_order_buffer),
-            )
 
         clipped_stake = min(max_stake, max(0.0, stake))
-        if clipped_stake < required_min_stake:
-            if required_min_stake > max_stake:
-                return 0.0
-            return required_min_stake
-        return clipped_stake
+        if current_rate > 0 and contract_size > 0:
+            candidate_amount = (clipped_stake * effective_leverage) / (current_rate * contract_size)
+            evaluation = self._evaluate_order_size(pair, candidate_amount, current_rate)
+            if bool(evaluation["is_valid"]):
+                return clipped_stake
+
+        if required_min_stake > max_stake:
+            logger.warning(
+                "Rejected %s order because required minimum collateral %.4f exceeds max stake %.4f.",
+                pair,
+                required_min_stake,
+                max_stake,
+            )
+            return 0.0
+
+        return required_min_stake
 
     def _populate_informative_indicators(self, dataframe: DataFrame) -> DataFrame:
         dataframe["ema50"] = ta.EMA(dataframe, timeperiod=50)
@@ -389,12 +510,10 @@ class VolatilityRotationMR(IStrategy):
         return dataframe.iloc[-1]
 
     def _runmode_allows_live_filters(self) -> bool:
-        if not self.live_filters_enabled:
-            return False
         if not self.dp:
             return False
         runmode = getattr(getattr(self.dp, "runmode", None), "value", None)
-        return runmode in {"live", "dry_run"}
+        return self.live_filters_enabled and runmode in {"live", "dry_run"}
 
     def _fetch_live_spread_ratio(self, pair: str) -> float | None:
         if not self.dp:
@@ -464,26 +583,42 @@ class VolatilityRotationMR(IStrategy):
         **kwargs,
     ) -> bool:
         _ = (order_type, amount, rate, time_in_force, current_time, entry_tag)
-        if not self._runmode_allows_live_filters():
-            return True
-
-        if self.enable_live_spread_filter:
-            spread_ratio = self._fetch_live_spread_ratio(pair)
-            if spread_ratio is not None and spread_ratio > self.live_max_spread_ratio:
-                return False
-
-        if self.enable_live_orderbook_filter:
-            imbalance = self._fetch_orderbook_imbalance(pair)
-            if imbalance is not None:
-                if side == "long" and imbalance < self.live_min_orderbook_imbalance:
-                    return False
-                if side == "short" and imbalance > -self.live_min_orderbook_imbalance:
+        if self._runmode_allows_live_filters():
+            if self.enable_live_spread_filter:
+                spread_ratio = self._fetch_live_spread_ratio(pair)
+                if spread_ratio is not None and spread_ratio > self.live_max_spread_ratio:
                     return False
 
-        if self.enable_live_funding_filter:
-            funding_rate = self._fetch_live_funding_rate(pair)
-            if funding_rate is not None and abs(funding_rate) > self.live_max_abs_funding_rate:
-                return False
+            if self.enable_live_orderbook_filter:
+                imbalance = self._fetch_orderbook_imbalance(pair)
+                if imbalance is not None:
+                    if side == "long" and imbalance < self.live_min_orderbook_imbalance:
+                        return False
+                    if side == "short" and imbalance > -self.live_min_orderbook_imbalance:
+                        return False
+
+            if self.enable_live_funding_filter:
+                funding_rate = self._fetch_live_funding_rate(pair)
+                if funding_rate is not None and abs(funding_rate) > self.live_max_abs_funding_rate:
+                    return False
+
+        if self.dp:
+            runmode = getattr(getattr(self.dp, "runmode", None), "value", None)
+            if runmode in {"live", "dry_run"}:
+                order_check = self._evaluate_order_size(pair, amount, rate)
+                if not bool(order_check["is_valid"]):
+                    logger.warning(
+                        "Rejected %s %s entry because order size is below Binance futures limits "
+                        "(amount=%.8f normalized=%.8f min_qty=%.8f notional=%.8f min_notional=%.8f).",
+                        pair,
+                        side,
+                        amount,
+                        float(order_check["normalized_amount"]),
+                        float(order_check["min_qty"]),
+                        float(order_check["effective_notional"]),
+                        float(order_check["min_notional"]),
+                    )
+                    return False
 
         return True
 
@@ -530,12 +665,12 @@ class VolatilityRotationMR(IStrategy):
         _ = (current_time, current_rate, entry_tag, side)
         last_candle = self._get_last_candle(pair)
         if last_candle is None:
-            return self._apply_min_order_guard(pair, proposed_stake, current_rate, min_stake, max_stake)
+            return self._apply_min_order_guard(pair, proposed_stake, current_rate, min_stake, max_stake, leverage)
 
         atr = float(last_candle.get("atr", 0.0) or 0.0)
         close = float(last_candle.get("close", current_rate) or current_rate)
         if atr <= 0 or close <= 0:
-            return self._apply_min_order_guard(pair, proposed_stake, current_rate, min_stake, max_stake)
+            return self._apply_min_order_guard(pair, proposed_stake, current_rate, min_stake, max_stake, leverage)
 
         stop_ratio = max((atr * float(self.atr_stop_mult.value)) / close, 0.001)
         try:
@@ -546,7 +681,7 @@ class VolatilityRotationMR(IStrategy):
         risk_budget = total_stake * self.stake_risk_fraction
         denominator = max(stop_ratio * max(leverage, 1.0), 0.001)
         stake = risk_budget / denominator
-        return self._apply_min_order_guard(pair, stake, current_rate, min_stake, max_stake)
+        return self._apply_min_order_guard(pair, stake, current_rate, min_stake, max_stake, leverage)
 
     def custom_stoploss(
         self,
