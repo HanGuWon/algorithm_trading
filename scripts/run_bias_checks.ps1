@@ -3,7 +3,8 @@ param(
     [string[]]$AdditionalConfigs = @(),
     [string]$Strategy = "VolatilityRotationMR",
     [string]$Timerange = "20240101-20241231",
-    [string]$LookaheadOverlay = "user_data/configs/volatility_rotation_mr_analysis_market.json"
+    [string]$LookaheadOverlay = "user_data/configs/volatility_rotation_mr_analysis_market.json",
+    [string]$RecursivePair = "ETH/USDT:USDT"
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,7 +35,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "lookahead-analysis failed. See $lookaheadLog"
 }
 
-& $freqtradeCmd recursive-analysis @configArgs --strategy $Strategy --timeframe 5m --timerange $Timerange --startup-candle 1600 2000 2400 > $recursiveLog 2>&1
+& $freqtradeCmd recursive-analysis @configArgs --strategy $Strategy --timeframe 5m --timerange $Timerange --startup-candle 1600 2000 2400 --pairs $RecursivePair > $recursiveLog 2>&1
 if ($LASTEXITCODE -ne 0) {
     throw "recursive-analysis failed. See $recursiveLog"
 }

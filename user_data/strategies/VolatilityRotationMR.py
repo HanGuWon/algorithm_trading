@@ -750,3 +750,17 @@ class VolatilityRotationMR(IStrategy):
         if elapsed_minutes >= int(self.time_stop_candles.value) * candle_minutes:
             return "time_stop"
         return None
+
+
+class VolatilityRotationMRDiagnostic(VolatilityRotationMR):
+    """
+    Analysis-only profile to diagnose signal density on historically aligned universes.
+    This keeps the same strategy structure and trade lifecycle while relaxing only a few
+    gating thresholds that were explicitly approved for diagnostic use.
+    """
+
+    vol_z_min = DecimalParameter(0.50, 3.00, default=1.00, decimals=2, space="buy", optimize=True)
+    price_z_threshold = DecimalParameter(1.00, 2.50, default=1.50, decimals=2, space="buy", optimize=True)
+    bb_width_min = DecimalParameter(0.005, 0.100, default=0.020, decimals=3, space="buy", optimize=True)
+    adx_1h_max = IntParameter(16, 32, default=24, space="buy", optimize=True)
+    slope_cap = DecimalParameter(0.0010, 0.0200, default=0.0060, decimals=4, space="buy", optimize=True)
