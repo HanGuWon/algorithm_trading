@@ -1,10 +1,19 @@
 .env
 .env.*
+.venv-freqtrade/
 *.pem
 *.key
 *.secret
 rsa_binance.private
 rsa_binance_*.private
+user_data/data/
+user_data/hyperopt_results/
+user_data/strategies/__pycache__/
+user_data/pairs/*.before.json
+user_data/*.sqlite
+user_data/*.sqlite-*
+docs/validation/logs/
+docs/validation/analysis/
 
 user_data/configs/volatility_rotation_mr_private.json
 user_data/configs/volatility_rotation_mr_private.*.json
@@ -12,4 +21,3 @@ user_data/configs/volatility_rotation_mr_private.*.json
 
 user_data/backtest_results/*
 !user_data/backtest_results/.gitkeep
-

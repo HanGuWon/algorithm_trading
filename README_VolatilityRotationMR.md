@@ -22,6 +22,7 @@ Primary configs:
 - `user_data/configs/volatility_rotation_mr_binance_dryrun.json`
 - `user_data/configs/volatility_rotation_mr_binance_live.json`
 - `user_data/configs/volatility_rotation_mr_backtest_static.json`
+- `user_data/configs/volatility_rotation_mr_analysis_market.json`
 - `user_data/configs/volatility_rotation_mr_private.example.json`
 
 Compatibility alias:
@@ -53,6 +54,18 @@ freqtrade trade \
 ```
 
 Always confirm the final merged result with `freqtrade show-config`.
+
+If `freqtrade` is not installed globally, bootstrap a pinned local environment:
+
+```powershell
+.\scripts\bootstrap_freqtrade_env.ps1
+```
+
+Then use the wrapper:
+
+```powershell
+.\scripts\freqtrade_cmd.ps1 --version
+```
 
 ## Binance Futures Prerequisites
 
@@ -103,8 +116,7 @@ Use the static research profile for reproducible backtests, hyperopt, and bias c
 
 ```bash
 freqtrade show-config \
-  --config user_data/configs/volatility_rotation_mr_backtest_static.json \
-  --strategy VolatilityRotationMR
+  --config user_data/configs/volatility_rotation_mr_backtest_static.json
 ```
 
 ### Regenerate the static pair snapshot from the runtime dynamic pairlist
@@ -137,7 +149,7 @@ Example research window:
 freqtrade download-data \
   --config user_data/configs/volatility_rotation_mr_backtest_static.json \
   --trading-mode futures \
-  --timeframes 5m 1h \
+  --timeframes 1m 5m 1h \
   --timerange 20231218-20250115
 ```
 
@@ -152,7 +164,7 @@ freqtrade backtesting \
   --timerange 20240101-20241231 \
   --enable-protections \
   --export signals \
-  --export-filename user_data/backtest_results/volatility_rotation_mr_signals.json
+  --backtest-directory user_data/backtest_results
 ```
 
 ### Lookahead analysis
@@ -160,10 +172,13 @@ freqtrade backtesting \
 ```bash
 freqtrade lookahead-analysis \
   --config user_data/configs/volatility_rotation_mr_backtest_static.json \
+  --config user_data/configs/volatility_rotation_mr_analysis_market.json \
   --strategy VolatilityRotationMR \
   --timeframe 5m \
+  --timeframe-detail 1m \
   --timerange 20240101-20241231 \
-  > user_data/backtest_results/lookahead-analysis.log
+  --lookahead-analysis-exportfilename docs/validation/logs/lookahead-analysis.csv \
+  --backtest-directory user_data/backtest_results
 ```
 
 ### Recursive analysis
@@ -174,7 +189,7 @@ freqtrade recursive-analysis \
   --strategy VolatilityRotationMR \
   --timeframe 5m \
   --timerange 20240101-20241231 \
-  > user_data/backtest_results/recursive-analysis.log
+  --startup-candle 1600 2000 2400
 ```
 
 ### Hyperopt
@@ -184,10 +199,13 @@ freqtrade hyperopt \
   --config user_data/configs/volatility_rotation_mr_backtest_static.json \
   --strategy VolatilityRotationMR \
   --timeframe 5m \
+  --timeframe-detail 1m \
   --spaces buy sell \
   --hyperopt-loss SharpeHyperOptLossDaily \
   --timerange 20240101-20241231 \
-  -e 200
+  --random-state 42 \
+  --job-workers 1 \
+  -e 10
 ```
 
 ### Backtesting analysis by tag
@@ -195,9 +213,13 @@ freqtrade hyperopt \
 ```bash
 freqtrade backtesting-analysis \
   --config user_data/configs/volatility_rotation_mr_backtest_static.json \
+  --backtest-directory user_data/backtest_results \
+  --analysis-groups 1 2 5 \
   --analysis-to-csv \
+  --analysis-csv-path docs/validation/analysis \
   --enter-reason-list mr_long_extreme mr_short_extreme \
-  --exit-reason-list mean_hit time_stop vol_decay trend_expand
+  --exit-reason-list mean_hit time_stop vol_decay trend_expand \
+  --timerange 20240101-20241231
 ```
 
 ### Helper scripts
@@ -226,8 +248,7 @@ Use dry-run for operational testing on the live dynamic universe.
 ```bash
 freqtrade show-config \
   --config user_data/configs/volatility_rotation_mr_binance_dryrun.json \
-  --config user_data/configs/volatility_rotation_mr_private.json \
-  --strategy VolatilityRotationMR
+  --config user_data/configs/volatility_rotation_mr_private.json
 ```
 
 ### Dry-run launch
@@ -237,6 +258,17 @@ freqtrade trade \
   --config user_data/configs/volatility_rotation_mr_binance_dryrun.json \
   --config user_data/configs/volatility_rotation_mr_private.json \
   --strategy VolatilityRotationMR
+```
+
+```powershell
+.\scripts\preflight_binance.ps1 `
+  -Mode dryrun `
+  -PrivateConfig user_data/configs/volatility_rotation_mr_private.json
+```
+
+```powershell
+.\scripts\start_dryrun.ps1 `
+  -PrivateConfig user_data/configs/volatility_rotation_mr_private.json
 ```
 
 ## Binance Futures Live Mode
@@ -258,8 +290,7 @@ before trading live.
 ```bash
 freqtrade show-config \
   --config user_data/configs/volatility_rotation_mr_binance_live.json \
-  --config user_data/configs/volatility_rotation_mr_private.json \
-  --strategy VolatilityRotationMR
+  --config user_data/configs/volatility_rotation_mr_private.json
 ```
 
 ### Live launch with private overlay
@@ -271,6 +302,17 @@ freqtrade trade \
   --strategy VolatilityRotationMR
 ```
 
+```powershell
+.\scripts\preflight_binance.ps1 `
+  -Mode live `
+  -PrivateConfig user_data/configs/volatility_rotation_mr_private.json
+```
+
+```powershell
+.\scripts\start_live.ps1 `
+  -PrivateConfig user_data/configs/volatility_rotation_mr_private.json
+```
+
 ### Live startup runbook
 
 After startup:
@@ -280,6 +322,7 @@ After startup:
 3. Verify the final merged config with `freqtrade show-config`.
 4. Verify the number of exchange-side stop orders equals the number of open positions.
 5. Verify no orphaned conditional stop orders remain after reconnects or restarts.
+6. Verify `stoploss_price_type = mark` was accepted by startup and no exchange capability error was raised.
 
 ## Validation Artifact
 
@@ -315,4 +358,5 @@ This file is intentionally small and safe to commit. It is the place to record:
 - VWAP is session-based and practical rather than exchange-microstructure-specific
 - the Binance order-size guard is conservative when exchange metadata is missing
 - the static pair snapshot is reproducible only until you intentionally regenerate it
+- a current-market snapshot can drift away from an older research window and reduce usable history
 - live spread, orderbook, and funding filters remain disabled by default to preserve reproducibility

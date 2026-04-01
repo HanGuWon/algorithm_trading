@@ -8,7 +8,9 @@ param(
 $ErrorActionPreference = "Stop"
 
 if (-not (Get-Command freqtrade -ErrorAction SilentlyContinue)) {
-    throw "freqtrade is not available in PATH."
+    $freqtradeCmd = Join-Path $PSScriptRoot "freqtrade_cmd.ps1"
+} else {
+    $freqtradeCmd = "freqtrade"
 }
 
 $args = @("test-pairlist", "--config", $Config)
@@ -17,7 +19,7 @@ foreach ($cfg in $AdditionalConfigs) {
 }
 $args += @("--quote", $Quote, "--print-json")
 
-$rawPairs = & freqtrade @args
+$rawPairs = & $freqtradeCmd @args
 $pairs = $rawPairs | ConvertFrom-Json
 if (-not $pairs -or $pairs.Count -eq 0) {
     throw "No pairs were returned by freqtrade test-pairlist."
@@ -35,5 +37,7 @@ if ($directory) {
     New-Item -ItemType Directory -Force -Path $directory | Out-Null
 }
 
-$snapshot | ConvertTo-Json -Depth 8 | Set-Content -Path $Output -Encoding UTF8
+$json = $snapshot | ConvertTo-Json -Depth 8
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText([System.IO.Path]::GetFullPath($Output), $json, $utf8NoBom)
 Write-Host "Saved $($pairs.Count) pairs to $Output"

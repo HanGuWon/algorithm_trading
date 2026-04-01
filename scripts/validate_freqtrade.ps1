@@ -7,7 +7,9 @@ param(
 $ErrorActionPreference = "Stop"
 
 if (-not (Get-Command freqtrade -ErrorAction SilentlyContinue)) {
-    throw "freqtrade is not available in PATH."
+    $freqtradeCmd = Join-Path $PSScriptRoot "freqtrade_cmd.ps1"
+} else {
+    $freqtradeCmd = "freqtrade"
 }
 
 $configArgs = @("--config", $Config)
@@ -16,7 +18,13 @@ foreach ($cfg in $AdditionalConfigs) {
 }
 
 Write-Host "Validating strategy discovery..."
-& freqtrade list-strategies @configArgs --strategy-path user_data/strategies | Out-Host
+& $freqtradeCmd list-strategies @configArgs | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    throw "list-strategies failed."
+}
 
 Write-Host "Validating merged configuration..."
-& freqtrade show-config @configArgs --strategy $Strategy | Out-Host
+& $freqtradeCmd show-config @configArgs | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    throw "show-config failed."
+}
