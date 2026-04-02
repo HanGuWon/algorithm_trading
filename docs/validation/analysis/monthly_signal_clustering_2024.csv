@@ -1,0 +1,11 @@
+month,long_signals,short_signals,total_signals,section,pair,profit_abs,long_trades,short_trades,total_trades
+2024-01,2.0,0.0,2.0,monthly_signals,,,,,
+2024-03,1.0,0.0,1.0,monthly_signals,,,,,
+2024-01,1.0,0.0,1.0,pair_month_signals,ATOM/USDT:USDT,,,,
+2024-01,1.0,0.0,1.0,pair_month_signals,DOT/USDT:USDT,,,,
+2024-03,1.0,0.0,1.0,pair_month_signals,SOL/USDT:USDT,,,,
+2024-01,,,,monthly_trades,,69.91306161,2.0,0.0,2.0
+2024-03,,,,monthly_trades,,25.77700275,1.0,0.0,1.0
+2024-01,,,,pair_month_trades,ATOM/USDT:USDT,34.95703488,1.0,0.0,1.0
+2024-01,,,,pair_month_trades,DOT/USDT:USDT,34.95602673,1.0,0.0,1.0
+2024-03,,,,pair_month_trades,SOL/USDT:USDT,25.77700275,1.0,0.0,1.0

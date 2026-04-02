@@ -21,9 +21,14 @@ Primary configs:
 - `user_data/configs/volatility_rotation_mr_base.json`
 - `user_data/configs/volatility_rotation_mr_binance_dryrun.json`
 - `user_data/configs/volatility_rotation_mr_binance_live.json`
-- `user_data/configs/volatility_rotation_mr_backtest_static.json`
+- `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json`
+- `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01_diagnostic.json`
 - `user_data/configs/volatility_rotation_mr_analysis_market.json`
 - `user_data/configs/volatility_rotation_mr_private.example.json`
+
+Generic static fallback:
+
+- `user_data/configs/volatility_rotation_mr_backtest_static.json`
 
 Compatibility alias:
 
@@ -104,61 +109,99 @@ $env:FREQTRADE__EXCHANGE__SECRET = (Get-Content -Raw .\rsa_binance.private)
 
 If the RSA private key is injected as a single string, preserve embedded newlines.
 
-## Research-Safe Static Backtesting Mode
+## Research-Safe 2024 PTI Backtesting Mode
 
-Use the static research profile for reproducible backtests, hyperopt, and bias checks.
+This is the primary alpha-validation path for the repository.
+It uses a point-in-time static universe aligned to `2024-01-01`, not the current runtime pairlist.
 
-- config: `user_data/configs/volatility_rotation_mr_backtest_static.json`
-- pair snapshot: `user_data/pairs/binance_usdt_futures_snapshot.json`
-- pairlist mode: `StaticPairList`
+Primary files:
 
-### Show the merged research config
+- baseline config: `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json`
+- diagnostic config: `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01_diagnostic.json`
+- PTI snapshot: `user_data/pairs/binance_usdt_futures_snapshot_2024-01-01.json`
+- historical snapshot builder: `scripts/build_historical_pair_snapshot.py`
+- signal funnel tool: `scripts/diagnose_signal_funnel.py`
+- monthly clustering tool: `scripts/report_monthly_signal_clustering.py`
+- density sweep tool: `scripts/sweep_signal_density.py`
+- walk-forward matrix tool: `scripts/run_pti_validation_matrix.py`
+
+The older generic static flow remains available as a fallback:
+
+- fallback config: `user_data/configs/volatility_rotation_mr_backtest_static.json`
+- fallback snapshot: `user_data/pairs/binance_usdt_futures_snapshot.json`
+
+Use the fallback flow only when you need a generic static-pairlist example. For 2024 research, prefer
+the PTI files above because the current-market snapshot drifts away from the historical window.
+
+### Build or rebuild the PTI snapshot
+
+This step ranks pairs from historical candles around the reference date instead of using current
+exchange tickers.
+
+```bash
+freqtrade download-data \
+  --config user_data/configs/volatility_rotation_mr_backtest_static.json \
+  --trading-mode futures \
+  --timeframes 1h \
+  --timerange 20231218-20250115 \
+  --pairs BTC/USDT:USDT ETH/USDT:USDT BNB/USDT:USDT SOL/USDT:USDT XRP/USDT:USDT DOGE/USDT:USDT ADA/USDT:USDT LINK/USDT:USDT AVAX/USDT:USDT TRX/USDT:USDT DOT/USDT:USDT LTC/USDT:USDT BCH/USDT:USDT ETC/USDT:USDT ATOM/USDT:USDT NEAR/USDT:USDT APT/USDT:USDT SUI/USDT:USDT UNI/USDT:USDT FIL/USDT:USDT ARB/USDT:USDT OP/USDT:USDT ICP/USDT:USDT TON/USDT:USDT PEPE/USDT:USDT
+```
+
+```bash
+python scripts/build_historical_pair_snapshot.py \
+  --datadir user_data/data/binance \
+  --reference-date 2024-01-01 \
+  --quote-currency USDT \
+  --lookback 7d \
+  --post-window 30d \
+  --top-n 20 \
+  --min-coverage-ratio 0.95 \
+  --output-json user_data/pairs/binance_usdt_futures_snapshot_2024-01-01.json \
+  --output-csv docs/validation/analysis/historical_snapshot_2024-01-01.csv \
+  --output-md docs/validation/analysis/historical_snapshot_2024-01-01.md
+```
+
+### Show the merged PTI configs
+
+`show-config` on Freqtrade `2026.2` reads the strategy from config, so the PTI research commands use
+the config file directly.
 
 ```bash
 freqtrade show-config \
-  --config user_data/configs/volatility_rotation_mr_backtest_static.json
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json
 ```
-
-### Regenerate the static pair snapshot from the runtime dynamic pairlist
 
 ```bash
-freqtrade test-pairlist \
-  --config user_data/configs/volatility_rotation_mr_binance_dryrun.json \
-  --quote USDT \
-  --print-json
-```
-
-```powershell
-.\scripts\save_pair_snapshot.ps1 `
-  -Config user_data/configs/volatility_rotation_mr_binance_dryrun.json `
-  -AdditionalConfigs user_data/configs/volatility_rotation_mr_private.json `
-  -Output user_data/pairs/binance_usdt_futures_snapshot.json
+freqtrade show-config \
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01_diagnostic.json
 ```
 
 ### Download futures data with explicit startup buffer
 
-`startup_candle_count = 2400`, which is about 8 days and 8 hours of 5m candles. The download range
-must start earlier than the analysis range because `download-data` does not add that buffer.
+`startup_candle_count = 2400`, which is about 8 days and 8 hours of 5m candles. `download-data`
+does not add that buffer automatically, so the download range must start earlier than the research
+window.
 
-Example research window:
+Example 2024 research window:
 
 - analysis start: `2024-01-01`
 - download start: `2023-12-18`
 
 ```bash
 freqtrade download-data \
-  --config user_data/configs/volatility_rotation_mr_backtest_static.json \
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json \
   --trading-mode futures \
   --timeframes 1m 5m 1h \
   --timerange 20231218-20250115
 ```
 
-### Backtesting
+### PTI baseline backtest
 
 ```bash
 freqtrade backtesting \
-  --config user_data/configs/volatility_rotation_mr_backtest_static.json \
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json \
   --strategy VolatilityRotationMR \
+  --strategy-path user_data/strategies \
   --timeframe 5m \
   --timeframe-detail 1m \
   --timerange 20240101-20241231 \
@@ -167,37 +210,218 @@ freqtrade backtesting \
   --backtest-directory user_data/backtest_results
 ```
 
-### Lookahead analysis
+### PTI diagnostic backtest
+
+This profile is for research diagnosis only. Do not use it for dry-run or live trading.
 
 ```bash
-freqtrade lookahead-analysis \
-  --config user_data/configs/volatility_rotation_mr_backtest_static.json \
-  --config user_data/configs/volatility_rotation_mr_analysis_market.json \
-  --strategy VolatilityRotationMR \
+freqtrade backtesting \
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01_diagnostic.json \
+  --strategy VolatilityRotationMRDiagnostic \
+  --strategy-path user_data/strategies \
   --timeframe 5m \
   --timeframe-detail 1m \
   --timerange 20240101-20241231 \
-  --lookahead-analysis-exportfilename docs/validation/logs/lookahead-analysis.csv \
+  --enable-protections \
+  --export signals \
   --backtest-directory user_data/backtest_results
 ```
 
-### Recursive analysis
+### PTI lookahead analysis
+
+Baseline:
+
+```bash
+freqtrade lookahead-analysis \
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json \
+  --config user_data/configs/volatility_rotation_mr_analysis_market.json \
+  --strategy VolatilityRotationMR \
+  --strategy-path user_data/strategies \
+  --timeframe 5m \
+  --timeframe-detail 1m \
+  --timerange 20240101-20241231 \
+  --lookahead-analysis-exportfilename docs/validation/logs/lookahead-analysis-2024-pti.csv \
+  --backtest-directory user_data/backtest_results
+```
+
+Diagnostic:
+
+```bash
+freqtrade lookahead-analysis \
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01_diagnostic.json \
+  --config user_data/configs/volatility_rotation_mr_analysis_market.json \
+  --strategy VolatilityRotationMRDiagnostic \
+  --strategy-path user_data/strategies \
+  --timeframe 5m \
+  --timeframe-detail 1m \
+  --timerange 20240101-20241231 \
+  --lookahead-analysis-exportfilename docs/validation/logs/lookahead-analysis-2024-pti-diagnostic.csv \
+  --backtest-directory user_data/backtest_results
+```
+
+### PTI recursive analysis
+
+Pin the pair explicitly for deterministic comparison.
+
+Baseline:
 
 ```bash
 freqtrade recursive-analysis \
-  --config user_data/configs/volatility_rotation_mr_backtest_static.json \
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json \
   --strategy VolatilityRotationMR \
+  --strategy-path user_data/strategies \
   --timeframe 5m \
   --timerange 20240101-20241231 \
-  --startup-candle 1600 2000 2400
+  --startup-candle 1600 2000 2400 \
+  --pairs ETH/USDT:USDT
 ```
 
-### Hyperopt
+Diagnostic:
+
+```bash
+freqtrade recursive-analysis \
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01_diagnostic.json \
+  --strategy VolatilityRotationMRDiagnostic \
+  --strategy-path user_data/strategies \
+  --timeframe 5m \
+  --timerange 20240101-20241231 \
+  --startup-candle 1600 2000 2400 \
+  --pairs ETH/USDT:USDT
+```
+
+### PTI backtesting analysis by tag
+
+Baseline:
+
+```bash
+freqtrade backtesting-analysis \
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json \
+  --backtest-directory user_data/backtest_results \
+  --analysis-groups 1 2 5 \
+  --analysis-to-csv \
+  --analysis-csv-path docs/validation/analysis/2024_pti \
+  --enter-reason-list mr_long_extreme mr_short_extreme \
+  --exit-reason-list mean_hit time_stop vol_decay trend_expand roi \
+  --timerange 20240101-20241231
+```
+
+Diagnostic:
+
+```bash
+freqtrade backtesting-analysis \
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01_diagnostic.json \
+  --backtest-directory user_data/backtest_results \
+  --analysis-groups 1 2 5 \
+  --analysis-to-csv \
+  --analysis-csv-path docs/validation/analysis/2024_pti_diagnostic \
+  --enter-reason-list mr_long_extreme mr_short_extreme \
+  --exit-reason-list mean_hit time_stop vol_decay trend_expand roi \
+  --timerange 20240101-20241231
+```
+
+### PTI signal funnel and density diagnostics
+
+Baseline funnel:
+
+```bash
+python scripts/diagnose_signal_funnel.py \
+  --snapshot-json user_data/pairs/binance_usdt_futures_snapshot_2024-01-01.json \
+  --datadir user_data/data/binance \
+  --timerange 20240101-20241231 \
+  --output-md docs/validation/analysis/signal_funnel_2024.md \
+  --output-csv docs/validation/analysis/signal_funnel_2024.csv
+```
+
+Diagnostic funnel:
+
+```bash
+python scripts/diagnose_signal_funnel.py \
+  --snapshot-json user_data/pairs/binance_usdt_futures_snapshot_2024-01-01.json \
+  --strategy-class VolatilityRotationMRDiagnostic \
+  --datadir user_data/data/binance \
+  --timerange 20240101-20241231 \
+  --output-md docs/validation/analysis/signal_funnel_2024_diagnostic.md \
+  --output-csv docs/validation/analysis/signal_funnel_2024_diagnostic.csv
+```
+
+Density sweep:
+
+```bash
+python scripts/sweep_signal_density.py \
+  --snapshot-json user_data/pairs/binance_usdt_futures_snapshot_2024-01-01.json \
+  --datadir user_data/data/binance \
+  --timerange 20240101-20241231 \
+  --output-md docs/validation/analysis/signal_density_sweep_2024.md \
+  --output-csv docs/validation/analysis/signal_density_sweep_2024.csv \
+  --target-signals 20
+```
+
+Monthly clustering for the baseline run:
+
+```bash
+python scripts/report_monthly_signal_clustering.py \
+  --snapshot-json user_data/pairs/binance_usdt_futures_snapshot_2024-01-01.json \
+  --strategy-class VolatilityRotationMR \
+  --datadir user_data/data/binance \
+  --timerange 20240101-20241231 \
+  --backtest-zip user_data/backtest_results/backtest-result-2026-04-02_12-44-18.zip \
+  --output-md docs/validation/analysis/monthly_signal_clustering_2024.md \
+  --output-csv docs/validation/analysis/monthly_signal_clustering_2024.csv
+```
+
+Monthly clustering for the diagnostic run:
+
+```bash
+python scripts/report_monthly_signal_clustering.py \
+  --snapshot-json user_data/pairs/binance_usdt_futures_snapshot_2024-01-01.json \
+  --strategy-class VolatilityRotationMRDiagnostic \
+  --datadir user_data/data/binance \
+  --timerange 20240101-20241231 \
+  --backtest-zip user_data/backtest_results/backtest-result-2026-04-02_12-30-31.zip \
+  --output-md docs/validation/analysis/monthly_signal_clustering_2024_diagnostic.md \
+  --output-csv docs/validation/analysis/monthly_signal_clustering_2024_diagnostic.csv
+```
+
+### PTI walk-forward validation matrix
+
+Use this only after the PTI baseline and diagnostic single-window runs are understood. The matrix is
+meant to answer whether the thesis is structurally sparse across multiple point-in-time universes,
+not to replace the published PTI 2024 baseline and diagnostic summaries.
+
+```bash
+python scripts/run_pti_validation_matrix.py \
+  --anchors 2023-07-01 2024-01-01 2024-04-01 2024-07-01 2024-10-01 2025-01-01 \
+  --windows 3 6 \
+  --base-config user_data/configs/volatility_rotation_mr_base.json \
+  --strategy-path user_data/strategies \
+  --snapshot-dir user_data/pairs \
+  --output-md docs/validation/alpha_validation_matrix.md \
+  --output-csv docs/validation/alpha_validation_matrix.csv \
+  --logs-dir docs/validation/logs/matrix \
+  --backtest-dir user_data/backtest_results/matrix \
+  --usable-trade-threshold 20
+```
+
+Primary published PTI artifacts:
+
+- `docs/validation/analysis/pti_baseline_backtest_2024.md`
+- `docs/validation/analysis/pti_diagnostic_backtest_2024.md`
+- `docs/validation/analysis/monthly_signal_clustering_2024.md`
+- `docs/validation/analysis/monthly_signal_clustering_2024_diagnostic.md`
+- `docs/validation/analysis/signal_density_sweep_2024.md`
+- `docs/validation/alpha_validation_matrix.md`
+
+### PTI hyperopt
+
+Run hyperopt only after the baseline produces a research-usable trade count.
+The repository keeps the command for completeness, but PTI alpha validation currently relies on the
+baseline and diagnostic backtests plus funnel diagnostics first.
 
 ```bash
 freqtrade hyperopt \
-  --config user_data/configs/volatility_rotation_mr_backtest_static.json \
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json \
   --strategy VolatilityRotationMR \
+  --strategy-path user_data/strategies \
   --timeframe 5m \
   --timeframe-detail 1m \
   --spaces buy sell \
@@ -208,31 +432,18 @@ freqtrade hyperopt \
   -e 10
 ```
 
-### Backtesting analysis by tag
-
-```bash
-freqtrade backtesting-analysis \
-  --config user_data/configs/volatility_rotation_mr_backtest_static.json \
-  --backtest-directory user_data/backtest_results \
-  --analysis-groups 1 2 5 \
-  --analysis-to-csv \
-  --analysis-csv-path docs/validation/analysis \
-  --enter-reason-list mr_long_extreme mr_short_extreme \
-  --exit-reason-list mean_hit time_stop vol_decay trend_expand \
-  --timerange 20240101-20241231
-```
-
 ### Helper scripts
 
 ```powershell
 .\scripts\validate_freqtrade.ps1 `
-  -Config user_data/configs/volatility_rotation_mr_backtest_static.json
+  -Config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json
 ```
 
 ```powershell
 .\scripts\run_bias_checks.ps1 `
-  -Config user_data/configs/volatility_rotation_mr_backtest_static.json `
-  -Timerange 20240101-20241231
+  -Config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json `
+  -Timerange 20240101-20241231 `
+  -RecursivePair ETH/USDT:USDT
 ```
 
 ## Binance Futures Dry-Run Mode

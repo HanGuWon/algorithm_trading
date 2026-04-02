@@ -13,7 +13,15 @@ user_data/pairs/*.before.json
 user_data/*.sqlite
 user_data/*.sqlite-*
 docs/validation/logs/
-docs/validation/analysis/
+docs/validation/analysis/*
+!docs/validation/analysis/pti_baseline_backtest_2024.md
+!docs/validation/analysis/pti_diagnostic_backtest_2024.md
+!docs/validation/analysis/signal_density_sweep_2024.md
+!docs/validation/analysis/signal_density_sweep_2024.csv
+!docs/validation/analysis/monthly_signal_clustering_2024.md
+!docs/validation/analysis/monthly_signal_clustering_2024.csv
+!docs/validation/analysis/monthly_signal_clustering_2024_diagnostic.md
+!docs/validation/analysis/monthly_signal_clustering_2024_diagnostic.csv
 
 user_data/configs/volatility_rotation_mr_private.json
 user_data/configs/volatility_rotation_mr_private.*.json
