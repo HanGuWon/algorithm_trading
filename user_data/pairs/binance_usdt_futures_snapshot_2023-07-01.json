@@ -5,6 +5,7 @@
       "BTC/USDT:USDT",
       "ETH/USDT:USDT",
       "BCH/USDT:USDT",
+      "1000PEPE/USDT:USDT",
       "LTC/USDT:USDT",
       "SOL/USDT:USDT",
       "XRP/USDT:USDT",
@@ -15,13 +16,12 @@
       "SUI/USDT:USDT",
       "OP/USDT:USDT",
       "DOGE/USDT:USDT",
+      "AAVE/USDT:USDT",
+      "APE/USDT:USDT",
       "NEAR/USDT:USDT",
       "APT/USDT:USDT",
       "LINK/USDT:USDT",
-      "DOT/USDT:USDT",
-      "FIL/USDT:USDT",
-      "AVAX/USDT:USDT",
-      "UNI/USDT:USDT"
+      "INJ/USDT:USDT"
     ]
   }
 }

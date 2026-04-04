@@ -3,7 +3,7 @@
 This repository commits only small, safe validation artifacts.
 Large raw backtest blobs, exchange secrets, private overlays, and live credentials must not be committed.
 
-Validation status as of `2026-04-02`:
+Validation status as of `2026-04-04`:
 
 - Freqtrade version: `2026.2`
 - Python version: `3.13.3`
@@ -14,201 +14,229 @@ Validation status as of `2026-04-02`:
 
 ### Environment and config layering
 
-- The repository loads in a real Freqtrade environment built from the pinned local venv.
-- Layered configs remain intact for PTI research, Binance dry-run, and Binance live.
-- `show-config` validation succeeded for:
-  - `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json`
-  - `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01_diagnostic.json`
-  - `user_data/configs/volatility_rotation_mr_binance_dryrun.json` plus private overlay
-  - `user_data/configs/volatility_rotation_mr_binance_live.json` plus private overlay
+- Layered configs still validate for PTI research, Binance dry-run, and Binance live.
+- The live Binance safety model remains unchanged:
+  - isolated futures
+  - orderbook pricing
+  - `stoploss_on_exchange = true`
+  - `stoploss_price_type = mark`
+  - private overlays / environment-variable secrets only
 
 ### Bias and determinism checks
 
-- PTI baseline recursive analysis on `ETH/USDT:USDT`: clean
-- PTI diagnostic recursive analysis on `ETH/USDT:USDT`: clean
-- Result in both cases: `No lookahead bias on indicators found.`
+The strategy logic itself was not redesigned in this pass.
+Only research-only helper scripts and long-only research subclasses were added.
+
+Latest recorded bias checks:
+
+| Profile | Config | Recursive | Lookahead |
+| --- | --- | --- | --- |
+| PTI top50 baseline | `user_data/configs/temp_pti_2024_top50_base.json` (temporary run config) | clean | `No bias`, `11` signals |
+| PTI top50 diagnostic | `user_data/configs/temp_pti_2024_top50_diag.json` (temporary run config) | clean | `No bias`, `20` signals |
 
 ### Binance dry-run/live safety
 
-- Existing Binance dry-run/live architecture remains unchanged.
-- `scripts/preflight_binance.ps1` still passes in dry-run and live modes when layered with a private overlay.
-- `stoploss_price_type = mark` remains accepted by startup validation.
-- No Binance live safety settings were changed in this validation pass.
+- `scripts/preflight_binance.ps1` remains valid for dry-run and live preflight checks.
+- No Binance live profile, no secret handling path, and no stoploss-on-exchange behavior were changed in this pass.
 
 ## B. Alpha Validation
 
-### Published research path
-
-The repository now treats the point-in-time research workflow as the primary alpha-validation path:
-
-- PTI baseline config: `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json`
-- PTI diagnostic config: `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01_diagnostic.json`
-- PTI snapshot: `user_data/pairs/binance_usdt_futures_snapshot_2024-01-01.json`
-
-The old generic static config remains available only as a fallback:
-
-- `user_data/configs/volatility_rotation_mr_backtest_static.json`
-- `user_data/pairs/binance_usdt_futures_snapshot.json`
-
-### 1. Old Current-Market Snapshot Run
+## 1. Legacy Current-Market Snapshot Failure
 
 - Config: `user_data/configs/volatility_rotation_mr_backtest_static.json`
 - Snapshot: `user_data/pairs/binance_usdt_futures_snapshot.json`
 - Timerange: `20240101-20241231`
 - Trades: `0`
-- Total profit: `0.00%`
+- Profit: `0.00%`
 - Drawdown: `0.00%`
-- Entry tags: `mr_long_extreme = 0`, `mr_short_extreme = 0`
-- Exit tags: `mean_hit = 0`, `time_stop = 0`, `vol_decay = 0`, `trend_expand = 0`, `roi = 0`
-- Lookahead verdict: `too few trades caught (0/10). Test failed.`
-- Recursive verdict: clean
+- Interpretation: engineering-valid but historically misaligned because the runtime universe had drifted away from the 2024 research window.
+
+## 2. Narrow Single-Anchor PTI Reference
+
+This remains a useful reference run, but it is no longer the primary optimization decision path.
+
+| Profile | Config | Snapshot | Timerange | Trades | Profit | Drawdown | Lookahead | Recursive |
+| --- | --- | --- | --- | ---: | ---: | ---: | --- | --- |
+| PTI baseline | `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json` | `user_data/pairs/binance_usdt_futures_snapshot_2024-01-01.json` | `20240101-20241231` | `3` | `+0.96%` / `95.690 USDT` | `0.00%` | inconclusive | clean |
+| PTI diagnostic | `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01_diagnostic.json` | `user_data/pairs/binance_usdt_futures_snapshot_2024-01-01.json` | `20240101-20241231` | `11` | `+3.03%` / `302.645 USDT` | `0.00%` | `No bias` | clean |
 
 Interpretation:
 
-- This run was operationally valid, but the snapshot had drifted toward a current-market runtime universe dominated by pairs that were historically misaligned with the 2024 test window.
+- The PTI snapshot fixed the zero-trade universe-drift problem.
+- The sample was still too narrow to justify full optimization.
 
-### 2. PTI Baseline Run
+## 3. Expanded Historical Research Universe
 
-- Config: `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json`
-- Snapshot: `user_data/pairs/binance_usdt_futures_snapshot_2024-01-01.json`
-- Timerange: `20240101-20241231`
-- Trades: `3`
-- Total profit: `0.96%` / `95.690 USDT`
-- Drawdown: `0.00%`
-- Entry tags:
-  - `mr_long_extreme = 3`
-  - `mr_short_extreme = 0`
-- Exit tags:
-  - `roi = 2`
-  - `mean_hit = 1`
-  - `vol_decay = 0`
-  - `trend_expand = 0`
-- Lookahead verdict: `too few trades caught (0/10). Test failed.`
-- Recursive verdict: clean
-- Published artifact: `docs/validation/analysis/pti_baseline_backtest_2024.md`
+Primary broadened-universe artifacts:
 
-Interpretation:
+- `user_data/pairs/binance_usdt_futures_research_candidates.json`
+- `docs/validation/analysis/research_candidate_universe.md`
+- `docs/validation/analysis/historical_snapshot_universe_sensitivity.md`
+- `user_data/pairs/binance_usdt_futures_snapshot_union_top50_2022-2025.json`
 
-- The PTI snapshot fixed the original universe-drift failure mode and moved the research result from `0` to `3` trades.
-- The zero-trade issue was reduced, but the baseline remains too sparse for optimization-grade statistics.
+Candidate-universe summary:
 
-### 3. PTI Diagnostic Run
+- Exchange universe queried: Binance USDT-M perpetuals
+- Research candidates retained: `90`
+- Current active-and-evaluable rows in the selection pass: `469`
+- Explicit exclusions:
+  - listed after `2025-01-01`: `254`
+  - inactive on exchange: `101`
+  - stock/index/commodity proxies: `21`
+  - non-ASCII novelty symbols: `3`
 
-- Config: `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01_diagnostic.json`
-- Snapshot: `user_data/pairs/binance_usdt_futures_snapshot_2024-01-01.json`
-- Timerange: `20240101-20241231`
-- Trades: `11`
-- Total profit: `3.03%` / `302.645 USDT`
-- Drawdown: `0.00%`
-- Entry tags:
-  - `mr_long_extreme = 10`
-  - `mr_short_extreme = 1`
-- Exit tags:
-  - `roi = 8`
-  - `mean_hit = 2`
-  - `vol_decay = 1`
-  - `trend_expand = 0`
-- Lookahead verdict: `No bias` on `11` signals
-- Recursive verdict: clean
-- Published artifact: `docs/validation/analysis/pti_diagnostic_backtest_2024.md`
+Snapshot sensitivity summary:
+
+- Quarterly PTI anchors: `2022-01-01` through `2025-01-01`
+- `top_n = 20`: always `20` selected pairs after the initial anchor
+- `top_n = 35`: always `35` selected pairs after the initial anchor
+- `top_n = 50`: ranged from `44` to `50` selected pairs by anchor
+- Top-50 union used for broad research downloads: `85` pairs
 
 Interpretation:
 
-- The research-only diagnostic relaxation improves the PTI sample from `3` to `11` trades.
-- It is useful for diagnosis and lookahead validation, but the sample is still small for serious optimization.
+- Expanding the candidate universe materially improved the opportunity set.
+- The retained PTI universe is now broad enough to test whether sample sparsity comes from the thesis itself rather than from a narrow candidate list.
 
-## Alpha Diagnosis
+## 4. Primary De-Overlapped Alpha Matrix
 
-### Universe drift vs signal sparsity
+Primary artifact:
 
-- Universe drift was fixed by the PTI snapshot.
-- The remaining bottleneck is signal sparsity, not engineering.
-- The PTI baseline funnel confirms the main binding gates:
-  - `active_pair` collapses `2,102,100` volume-positive rows down to `75`
-  - `weak_trend_regime` then collapses those to `4`
-  - short-side BB breach and bearish reversal remain extremely rare
+- `docs/validation/alpha_validation_matrix_deduped.md`
 
-### Monthly clustering
+Primary design:
 
-Published clustering artifacts:
+- non-overlapping forward `6m` windows
+- anchors: `2022-01-01`, `2022-07-01`, `2023-01-01`, `2023-07-01`, `2024-01-01`, `2024-07-01`, `2025-01-01`
+- PTI snapshot size: `top_n = 50`
 
-- `docs/validation/analysis/monthly_signal_clustering_2024.md`
-- `docs/validation/analysis/monthly_signal_clustering_2024_diagnostic.md`
+Headline results:
 
-Observed clustering:
+| Variant | Raw trades | Unique trades | Profit | Long trades | Short trades | Usable window reached? |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| baseline | `15` | `15` | `376.381 USDT` | `12` | `3` | only `No` |
+| diagnostic | `45` | `45` | `908.870 USDT` | `38` | `7` | `Yes`, but only in `2024-01 -> 2024-07` |
 
-- PTI baseline signals cluster entirely in `2024-01` and `2024-03`
-- PTI diagnostic signals cluster in `2024-01`, `2024-03`, and a single short in `2024-08`
-- This is a structural sample-distribution problem, not just a point estimate issue
+Most important window detail:
 
-### Density sweep
-
-Published artifact:
-
-- `docs/validation/analysis/signal_density_sweep_2024.md`
-
-Observed density sweep:
-
-- baseline: `3` total signals
-- regime_relaxed: `8`
-- combined_mild: `8`
-- diagnostic: `11`
-- diagnostic_plus: `11`
-- exploratory_plus: `12`
+- `2024-01-01` diagnostic window: `27` trades, `733.229 USDT`, `0.50%` drawdown
+- Every other diagnostic window: `0` to `8` trades
+- Every baseline window except `2022-01`, `2024-01`, and `2025-01`: `0` trades
 
 Interpretation:
 
-- Relaxing regime gates helps more than relaxing `price_z_threshold` or `bb_width_min` in isolation.
-- Even after wider research-only relaxations, the tested PTI 2024 sample still fails to reach `20` signals.
+- Expanding the universe solved the old zero-trade bottleneck and made the thesis statistically testable enough to diagnose.
+- Deduping also exposed the real limitation: only one non-overlapping window carries a genuinely usable sample.
+- The evidence is cleaner than the older overlapping matrix because the 2024-01 burst is no longer counted twice.
 
-## Walk-Forward PTI Matrix
+## 5. Side Ablation
 
-Published artifact:
+Primary artifact:
 
-- `docs/validation/alpha_validation_matrix.md`
-
-Matrix execution note:
-
-- The walk-forward matrix uses `5m` backtests without `--timeframe-detail 1m` to keep the broader anchor/window sweep tractable.
-- The published PTI baseline and PTI diagnostic headline runs above remain the higher-fidelity single-window reference runs.
-
-Anchors tested:
-
-- `2023-07-01`
-- `2024-01-01`
-- `2024-04-01`
-- `2024-07-01`
-- `2024-10-01`
-- `2025-01-01`
-
-Windows tested:
-
-- next `3` months
-- next `6` months
+- `docs/validation/analysis/side_ablation_matrix.md`
 
 Summary:
 
-| Variant | Total trades across matrix | Total profit USDT | Best single run | Usable sample reached? |
-| --- | ---: | ---: | --- | --- |
-| baseline | `6` | `191.626` | `2024-01-01 + 3m` with `3` trades | `No` |
-| diagnostic | `25` | `822.403` | `2024-01-01 + 3m` and `+6m` with `10` trades | `No` |
+| Variant | Trades | Profit | Long trades | Short trades |
+| --- | ---: | ---: | ---: | ---: |
+| baseline long+short | `15` | `376.381 USDT` | `12` | `3` |
+| baseline long-only | `12` | `339.778 USDT` | `12` | `0` |
+| diagnostic long+short | `45` | `908.870 USDT` | `38` | `7` |
+| diagnostic long-only | `38` | `768.682 USDT` | `38` | `0` |
 
-Observed pattern:
+Interpretation:
 
-- Only the `2024-01-01` anchor produces a multi-trade burst.
-- `2024-04-01` and `2024-07-01` diagnostic windows produce only a single short trade each.
-- `2024-10-01` and `2025-01-01` produce no trades in either variant.
-- No tested anchor/window/variant reaches the `20`-trade usable-sample threshold.
+- Long-only retains most of the baseline and diagnostic edge.
+- The short side does add a small number of profitable realized trades, but the entire strategy still remains overwhelmingly long-dominated.
+- In practical research terms, the long side is the only side with enough recurring structure to justify further thesis work.
 
-## Decision Memo
+## 6. Signal Event Study
+
+Primary artifact:
+
+- `docs/validation/analysis/signal_event_study.md`
+
+Mean forward returns:
+
+| Variant | Side | ret_12 | ret_24 | ret_48 | MFE_48 | MAE_48 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| baseline | long | `+0.0637` | `+0.0515` | `+0.0797` | `+0.0920` | `-0.0026` |
+| baseline | short | `-0.0042` | `+0.0047` | `-0.0101` | `+0.0515` | `-0.0399` |
+| diagnostic | long | `+0.0610` | `+0.0535` | `+0.0661` | `+0.0958` | `-0.0136` |
+| diagnostic | short | `-0.0055` | `-0.0191` | `-0.0481` | `+0.0557` | `-0.0964` |
+
+Mean-hit probability:
+
+| Variant | Side | mean_hit_12 | mean_hit_24 | mean_hit_48 |
+| --- | --- | ---: | ---: | ---: |
+| baseline | long | `0.0000` | `0.0000` | `0.0000` |
+| baseline | short | `0.0000` | `0.0000` | `0.0000` |
+| diagnostic | long | `0.0526` | `0.0526` | `0.1053` |
+| diagnostic | short | `0.0000` | `0.0000` | `0.0000` |
+
+Interpretation:
+
+- Raw long signals have positive forward return behavior across horizons.
+- Raw short signals are weak to negative after `12`, `24`, and `48` candles, especially in the diagnostic profile.
+- The short side is therefore not only sparse in realized trades; it also looks structurally worse at the raw-signal level.
+
+## 7. Indicator Diagnostics and Backtesting-Analysis
+
+Primary artifacts:
+
+- `docs/validation/analysis/signal_indicator_diagnostics.md`
+- `docs/validation/analysis/2024_pti_top50_base/group_*.csv`
+- `docs/validation/analysis/2024_pti_top50_diag/group_*.csv`
+
+Signal-candle indicator summary:
+
+- Baseline long signals: `12`
+- Baseline short signals: `3`
+- Diagnostic long signals: `38`
+- Diagnostic short signals: `7`
+- Baseline near-miss rows: `28` long / `7` short
+- Diagnostic near-miss rows: `74` long / `21` short
+
+Observed signal-candle regimes:
+
+- Long signals sit around:
+  - `vol_z` ≈ `2.20` to `2.58`
+  - `natr` ≈ `3.16%` to `3.21%`
+  - `adx_1h` ≈ `17.7` to `19.6`
+  - `rsi` ≈ `20.8` to `21.0`
+  - `price_z` ≈ `-2.39` to `-2.47`
+- Short signals are scarcer and less attractive:
+  - `7` diagnostic short signals versus `21` diagnostic short near-misses
+  - higher `rsi` and positive `price_z`, but weaker forward event-study behavior
+
+Tag-level backtesting-analysis on the expanded 2024 top50 reference run:
+
+- baseline:
+  - `mr_long_extreme = 11`
+  - exit split: `roi = 7`, `mean_hit = 4`
+- diagnostic:
+  - `mr_long_extreme = 26`
+  - `mr_short_extreme = 1`
+  - exit split: `roi = 21`, `mean_hit = 5`, `vol_decay = 1`
+
+Interpretation:
+
+- The gate stack is finding a coherent long-side oversold/reversal regime.
+- The short side remains both scarce and lower-quality.
+
+## Final Recommendation
+
+Expanded candidate-universe research materially improved sample density.
+The thesis is no longer blocked by universe drift or engineering scaffolding.
+
+However:
+
+- only one non-overlapping diagnostic window reaches a usable sample on its own
+- long-side evidence dominates almost completely
+- short-side raw signals remain weak even when they occasionally produce realized profits
 
 Decision:
 
-- `diagnostic is only viable as a research profile`
-- `thesis is coherent but too sparse for optimization-grade statistics in the tested windows`
-
-Practical recommendation:
-
-- Keep live and Binance safety settings unchanged.
-- Do not spend more time on aggressive hyperopt yet.
-- If optimization is revisited, do it only after expanding the historical window or historically aligned universe enough to produce a materially denser sample.
+- `No-go` for full long/short optimization right now.
+- `Yes` for limited long-only diagnostic research if the goal is to keep exploring the thesis.
+- `Park` the full long/short strategy until a broader history span or a demonstrably denser regime design produces a better-distributed sample.

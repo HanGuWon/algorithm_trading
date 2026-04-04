@@ -5,8 +5,10 @@
       "BTC/USDT:USDT",
       "ETH/USDT:USDT",
       "SOL/USDT:USDT",
+      "ORDI/USDT:USDT",
       "BNB/USDT:USDT",
       "OP/USDT:USDT",
+      "SEI/USDT:USDT",
       "AVAX/USDT:USDT",
       "XRP/USDT:USDT",
       "ARB/USDT:USDT",
@@ -18,10 +20,8 @@
       "DOT/USDT:USDT",
       "BCH/USDT:USDT",
       "DOGE/USDT:USDT",
-      "LTC/USDT:USDT",
-      "SUI/USDT:USDT",
-      "ETC/USDT:USDT",
-      "ATOM/USDT:USDT"
+      "1000BONK/USDT:USDT",
+      "LTC/USDT:USDT"
     ]
   }
 }

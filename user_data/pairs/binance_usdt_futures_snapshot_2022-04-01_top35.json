@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.freqtrade.io/schema.json",
+  "exchange": {
+    "pair_whitelist": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT",
+      "SOL/USDT:USDT",
+      "ETC/USDT:USDT",
+      "AVAX/USDT:USDT",
+      "APE/USDT:USDT",
+      "AXS/USDT:USDT",
+      "ADA/USDT:USDT",
+      "1000SHIB/USDT:USDT",
+      "GALA/USDT:USDT",
+      "FIL/USDT:USDT",
+      "XRP/USDT:USDT",
+      "NEAR/USDT:USDT",
+      "VET/USDT:USDT",
+      "DOGE/USDT:USDT",
+      "SAND/USDT:USDT",
+      "AAVE/USDT:USDT",
+      "BNB/USDT:USDT",
+      "DOT/USDT:USDT",
+      "ATOM/USDT:USDT",
+      "CHZ/USDT:USDT",
+      "LINK/USDT:USDT",
+      "DYDX/USDT:USDT",
+      "LTC/USDT:USDT",
+      "THETA/USDT:USDT",
+      "OGN/USDT:USDT",
+      "ZEC/USDT:USDT",
+      "BCH/USDT:USDT",
+      "TRX/USDT:USDT",
+      "CRV/USDT:USDT",
+      "ALGO/USDT:USDT",
+      "QTUM/USDT:USDT",
+      "UNI/USDT:USDT",
+      "CHR/USDT:USDT",
+      "XLM/USDT:USDT"
+    ]
+  }
+}

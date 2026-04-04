@@ -2,7 +2,25 @@
 
 Primary documentation lives in `README_VolatilityRotationMR.md`.
 
-Primary 2024 alpha-validation path:
+Primary broader alpha-validation path:
+- `user_data/pairs/binance_usdt_futures_research_candidates.json`
+- `user_data/pairs/binance_usdt_futures_snapshot_union_top50_2022-2025.json`
+- `scripts/build_research_candidate_universe.py`
+- `scripts/build_snapshot_sensitivity_matrix.py`
+- `scripts/run_pti_validation_matrix_deduped.py`
+- `scripts/run_side_ablation_matrix.py`
+- `scripts/run_signal_event_study.py`
+- `scripts/report_signal_indicator_diagnostics.py`
+- `docs/validation/public_validation_summary.md`
+- `docs/validation/final_decision_memo.md`
+- `docs/validation/alpha_validation_matrix_deduped.md`
+- `docs/validation/analysis/research_candidate_universe.md`
+- `docs/validation/analysis/historical_snapshot_universe_sensitivity.md`
+- `docs/validation/analysis/side_ablation_matrix.md`
+- `docs/validation/analysis/signal_event_study.md`
+- `docs/validation/analysis/signal_indicator_diagnostics.md`
+
+Single-anchor 2024 PTI reference path:
 - `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json`
 - `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01_diagnostic.json`
 - `user_data/pairs/binance_usdt_futures_snapshot_2024-01-01.json`
@@ -11,7 +29,6 @@ Primary 2024 alpha-validation path:
 - `scripts/report_monthly_signal_clustering.py`
 - `scripts/sweep_signal_density.py`
 - `scripts/run_pti_validation_matrix.py`
-- `docs/validation/public_validation_summary.md`
 - `docs/validation/alpha_validation_matrix.md`
 - `docs/validation/analysis/pti_baseline_backtest_2024.md`
 - `docs/validation/analysis/pti_diagnostic_backtest_2024.md`

@@ -764,3 +764,29 @@ class VolatilityRotationMRDiagnostic(VolatilityRotationMR):
     bb_width_min = DecimalParameter(0.005, 0.100, default=0.020, decimals=3, space="buy", optimize=True)
     adx_1h_max = IntParameter(16, 32, default=24, space="buy", optimize=True)
     slope_cap = DecimalParameter(0.0010, 0.0200, default=0.0060, decimals=4, space="buy", optimize=True)
+
+
+class VolatilityRotationMRLongOnly(VolatilityRotationMR):
+    """
+    Research-only long-only ablation to quantify whether short-side activity adds signal quality.
+    """
+
+    can_short = False
+
+    def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        dataframe = super().populate_entry_trend(dataframe, metadata)
+        dataframe["enter_short"] = 0
+        return dataframe
+
+
+class VolatilityRotationMRDiagnosticLongOnly(VolatilityRotationMRDiagnostic):
+    """
+    Research-only long-only version of the relaxed diagnostic profile.
+    """
+
+    can_short = False
+
+    def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        dataframe = super().populate_entry_trend(dataframe, metadata)
+        dataframe["enter_short"] = 0
+        return dataframe

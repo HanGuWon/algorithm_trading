@@ -109,6 +109,110 @@ $env:FREQTRADE__EXCHANGE__SECRET = (Get-Content -Raw .\rsa_binance.private)
 
 If the RSA private key is injected as a single string, preserve embedded newlines.
 
+## Primary Broader Alpha Research Path
+
+The repository's primary alpha-validation workflow is now broader than the original single-anchor
+2024 PTI run. It starts from a reproducible Binance USDT-M research candidate universe, rebuilds
+quarterly PTI snapshots on historical candles, then judges the thesis on a non-overlapping 6-month
+matrix plus side-ablation and event-study diagnostics.
+
+Primary files:
+
+- research candidates: `user_data/pairs/binance_usdt_futures_research_candidates.json`
+- top-50 union for broad research downloads: `user_data/pairs/binance_usdt_futures_snapshot_union_top50_2022-2025.json`
+- candidate universe builder: `scripts/build_research_candidate_universe.py`
+- quarterly PTI sensitivity builder: `scripts/build_snapshot_sensitivity_matrix.py`
+- de-overlapped matrix runner: `scripts/run_pti_validation_matrix_deduped.py`
+- side-ablation runner: `scripts/run_side_ablation_matrix.py`
+- signal event-study runner: `scripts/run_signal_event_study.py`
+- indicator diagnostics: `scripts/report_signal_indicator_diagnostics.py`
+- public summary: `docs/validation/public_validation_summary.md`
+- final decision memo: `docs/validation/final_decision_memo.md`
+
+Exact commands used for the broadened research pass:
+
+```bash
+python scripts/build_research_candidate_universe.py --target-size 90
+```
+
+```bash
+freqtrade download-data \
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json \
+  --trading-mode futures \
+  --timeframes 1h \
+  --timerange 20211215-20250715 \
+  --pairs-file user_data/pairs/binance_usdt_futures_research_candidates.json \
+  --prepend
+```
+
+```bash
+python scripts/build_snapshot_sensitivity_matrix.py \
+  --pairs-file user_data/pairs/binance_usdt_futures_research_candidates.json \
+  --anchor-start 2022-01-01 \
+  --anchor-end 2025-01-01 \
+  --top-n 20 35 50 \
+  --union-top-n 50
+```
+
+```bash
+freqtrade download-data \
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json \
+  --trading-mode futures \
+  --timeframes 5m \
+  --timerange 20211215-20250715 \
+  --pairs-file user_data/pairs/binance_usdt_futures_snapshot_union_top50_2022-2025.json \
+  --prepend
+```
+
+```bash
+freqtrade download-data \
+  --config user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json \
+  --trading-mode futures \
+  --timeframes 5m \
+  --timerange 20250115-20250715 \
+  --pairs-file user_data/pairs/binance_usdt_futures_snapshot_union_top50_2022-2025.json
+```
+
+```bash
+python scripts/run_pti_validation_matrix_deduped.py \
+  --anchors 2022-01-01 2022-07-01 2023-01-01 2023-07-01 2024-01-01 2024-07-01 2025-01-01 \
+  --window-months 6 \
+  --snapshot-top-n 50 \
+  --output-md docs/validation/alpha_validation_matrix_deduped.md \
+  --output-csv docs/validation/alpha_validation_matrix_deduped.csv
+```
+
+```bash
+python scripts/run_side_ablation_matrix.py \
+  --anchors 2022-01-01 2022-07-01 2023-01-01 2023-07-01 2024-01-01 2024-07-01 2025-01-01 \
+  --window-months 6 \
+  --snapshot-top-n 50 \
+  --output-md docs/validation/analysis/side_ablation_matrix.md \
+  --output-csv docs/validation/analysis/side_ablation_matrix.csv
+```
+
+```bash
+python scripts/run_signal_event_study.py \
+  --anchors 2022-01-01 2022-07-01 2023-01-01 2023-07-01 2024-01-01 2024-07-01 2025-01-01 \
+  --window-months 6 \
+  --snapshot-top-n 50 \
+  --output-md docs/validation/analysis/signal_event_study.md \
+  --output-csv docs/validation/analysis/signal_event_study.csv
+```
+
+```bash
+python scripts/report_signal_indicator_diagnostics.py \
+  --anchors 2022-01-01 2022-07-01 2023-01-01 2023-07-01 2024-01-01 2024-07-01 2025-01-01 \
+  --window-months 6 \
+  --snapshot-top-n 50 \
+  --output-md docs/validation/analysis/signal_indicator_diagnostics.md \
+  --output-csv docs/validation/analysis/signal_indicator_diagnostics.csv
+```
+
+The broader path is the primary go/no-go workflow for optimization decisions.
+The older 2024-only PTI flow remains useful as a narrow reference window, but it should not be used
+alone to argue that the thesis is statistically sufficient.
+
 ## Research-Safe 2024 PTI Backtesting Mode
 
 This is the primary alpha-validation path for the repository.
