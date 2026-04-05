@@ -230,10 +230,13 @@ Primary artifacts:
 
 - `docs/validation/longonly_research_path.md`
 - `docs/validation/alpha_validation_matrix_longonly.md`
+- `docs/validation/longonly_promotion_study.md`
 - `docs/validation/analysis/longonly_concentration_risk.md`
 - `docs/validation/analysis/longonly_regime_context.md`
 - `docs/validation/analysis/longonly_signal_quality.md`
 - `docs/validation/analysis/longonly_cost_stress.md`
+- `docs/validation/analysis/longonly_parameter_stability.md`
+- `docs/validation/analysis/longonly_time_concentration_stress.md`
 
 Headline long-only matrix:
 
@@ -274,6 +277,45 @@ Cost-stress summary:
 - The long-only edge survives reasonable stress.
 - Diagnostic long-only stays positive from `768.682 USDT` baseline to `716.009 USDT` under worse fee plus slippage stress.
 
+## 9. Frozen Long-Only Promotion Study
+
+This pass did not reopen optimization.
+It froze `VolatilityRotationMRDiagnosticLongOnly` at the published diagnostic-long-only defaults and separated candidate-selection evidence from promotion evidence.
+
+Promotion artifacts:
+
+- `docs/validation/longonly_promotion_study.md`
+- `docs/validation/longonly_promotion_study.csv`
+- `docs/validation/analysis/longonly_parameter_stability.md`
+- `docs/validation/analysis/longonly_time_concentration_stress.md`
+
+Forward holdouts:
+
+| Window | Trades | Profit | Drawdown |
+| --- | ---: | ---: | ---: |
+| `2024-07-01 -> 2025-01-01` | `0` | `0.000 USDT` | `0.00%` |
+| `2025-01-01 -> 2025-07-01` | `0` | `0.000 USDT` | `0.00%` |
+| `2024-07-01 -> 2025-07-01` (12m view) | `0` | `0.000 USDT` | `0.00%` |
+
+Interpretation:
+
+- the only follow-up candidate tested after the broader PTI path was `VolatilityRotationMRDiagnosticLongOnly`
+- the frozen candidate had no forward promotion sample at all
+- the broader local long-only package remains publishable and reproducible, but it is not promotable on current holdout evidence
+
+Parameter-stability summary:
+
+- the `2024-01-01 -> 2024-07-01` burst was locally stable under mild one-parameter perturbations
+- `vol_z_min` and `adx_1h_max` moved realized trade count and PnL, but the edge did not collapse inside that profitable window
+- local threshold stability does not rescue the missing forward sample
+
+Time-concentration summary:
+
+- remove best month `2024-01`: `15` trades, `46.275 USDT`
+- remove best 2 months: `13` trades, `-18.521 USDT`
+- remove best anchor `2024-01-01 -> 2024-07-01`: `11` trades, `35.453 USDT`
+- forward holdout windows: `0` trades, `0.000 USDT`
+
 ## Final Recommendation
 
 Expanded candidate-universe research materially improved sample density.
@@ -285,9 +327,11 @@ However:
 - long-side evidence dominates almost completely
 - short-side raw signals remain weak even when they occasionally produce realized profits
 - long-only survives pair concentration and cost stress, but remains heavily concentrated in the `2024-01` flush-rebound environment
+- the frozen long-only candidate produced `0` trades across both forward holdouts and the 12m forward view
 
 Decision:
 
 - `No-go` for full long/short optimization right now.
-- `Conditional go` for limited long-only diagnostic research only.
-- `Park` the full long/short strategy until a broader history span or a demonstrably denser regime design produces a better-distributed sample.
+- `No-go / Park` for `VolatilityRotationMRDiagnosticLongOnly` in its current frozen form.
+- no additional context-gated subclass was added because the current context labels mostly relabel the same flush / oversold burst and do not improve distribution.
+- `Park` the strategy family until materially new evidence or a clearly distinct, better-distributed context design appears.

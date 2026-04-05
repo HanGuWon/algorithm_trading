@@ -14,6 +14,13 @@ Same-candle exit and reverse is intentionally unsupported because vanilla Freqtr
 position per pair, ignores conflicting entry and exit signals within the same evaluation cycle, and
 models exit-signal fills on the next candle in backtesting.
 
+Current research endpoint:
+
+- full long/short remains parked
+- `VolatilityRotationMRDiagnosticLongOnly` was the only follow-up candidate advanced into a frozen promotion study
+- that frozen candidate failed forward holdouts and is currently parked as well
+- Binance dry-run/live safety settings are unchanged
+
 ## Config Model
 
 Primary configs:
@@ -212,6 +219,31 @@ python scripts/report_signal_indicator_diagnostics.py \
 The broader path is the primary go/no-go workflow for optimization decisions.
 The older 2024-only PTI flow remains useful as a narrow reference window, but it should not be used
 alone to argue that the thesis is statistically sufficient.
+
+## Frozen Long-Only Follow-Up
+
+The long-only package is published in this repository for diagnosis and reproducibility only.
+
+Primary files:
+
+- long-only path and commands: `docs/validation/longonly_research_path.md`
+- long-only matrix: `docs/validation/alpha_validation_matrix_longonly.md`
+- frozen promotion study: `docs/validation/longonly_promotion_study.md`
+- parameter stability: `docs/validation/analysis/longonly_parameter_stability.md`
+- time concentration stress: `docs/validation/analysis/longonly_time_concentration_stress.md`
+
+Current interpretation:
+
+- `VolatilityRotationMRDiagnosticLongOnly` was the only follow-up research candidate after the broader PTI pass
+- the candidate-selection evidence remained the same local package already summarized in the long-only matrix
+- the frozen promotion holdouts `2024-07-01 -> 2025-01-01`, `2025-01-01 -> 2025-07-01`, and the `2024-07-01 -> 2025-07-01` 12m forward view all produced `0` trades
+- local threshold perturbations around the frozen defaults were stable inside the profitable `2024-01 -> 2024-07` burst, but that did not convert into forward evidence
+- no `VolatilityRotationMRDiagnosticLongOnlyContext` subclass was added because the observed flush / oversold context mostly relabeled the same exposure and did not clear the bar for a materially distinct, better-distributed filter
+
+Result:
+
+- `No-go / Park` for full long/short
+- `No-go / Park` for the frozen long-only candidate in its current form
 
 ## Research-Safe 2024 PTI Backtesting Mode
 

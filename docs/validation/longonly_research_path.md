@@ -14,10 +14,19 @@ Primary configs:
 Primary artifacts:
 
 - matrix: `docs/validation/alpha_validation_matrix_longonly.md`
+- frozen promotion study: `docs/validation/longonly_promotion_study.md`
 - concentration: `docs/validation/analysis/longonly_concentration_risk.md`
 - regime context: `docs/validation/analysis/longonly_regime_context.md`
 - signal quality: `docs/validation/analysis/longonly_signal_quality.md`
 - cost stress: `docs/validation/analysis/longonly_cost_stress.md`
+- parameter stability: `docs/validation/analysis/longonly_parameter_stability.md`
+- time concentration stress: `docs/validation/analysis/longonly_time_concentration_stress.md`
+
+Current endpoint:
+
+- full long/short remains parked
+- `VolatilityRotationMRDiagnosticLongOnly` is the only long-only candidate that was advanced beyond the broader PTI validation path
+- the frozen-candidate promotion study parked that candidate after zero-trade forward holdouts
 
 ## Discoverability
 
@@ -221,3 +230,70 @@ Cost stress:
   --output-md docs/validation/analysis/longonly_cost_stress.md `
   --output-csv docs/validation/analysis/longonly_cost_stress.csv
 ```
+
+## Frozen Candidate
+
+Frozen candidate profile:
+
+- strategy: `VolatilityRotationMRDiagnosticLongOnly`
+- do not run new hyperopt
+- do not retune thresholds as part of the main conclusion path
+- do not redesign the strategy thesis
+- same-candle reversal remains unsupported
+
+Frozen defaults:
+
+| parameter | value |
+|:--|--:|
+| `vol_z_min` | `1.00` |
+| `price_z_threshold` | `1.50` |
+| `bb_width_min` | `0.020` |
+| `adx_1h_max` | `24` |
+| `slope_cap` | `0.0060` |
+
+## Frozen-Candidate Reproduction
+
+Promotion study:
+
+```powershell
+& .\.venv-freqtrade\Scripts\python.exe scripts\run_longonly_promotion_study.py `
+  --selection-matrix-csv docs/validation/alpha_validation_matrix_longonly.csv `
+  --selection-backtest-dir user_data/backtest_results/longonly_matrix `
+  --output-md docs/validation/longonly_promotion_study.md `
+  --output-csv docs/validation/longonly_promotion_study.csv `
+  --logs-dir docs/validation/logs/longonly_promotion `
+  --backtest-dir user_data/backtest_results/longonly_promotion
+```
+
+Local threshold stability:
+
+```powershell
+& .\.venv-freqtrade\Scripts\python.exe scripts\run_longonly_parameter_stability.py `
+  --anchor 2024-01-01 `
+  --window-months 6 `
+  --output-md docs/validation/analysis/longonly_parameter_stability.md `
+  --output-csv docs/validation/analysis/longonly_parameter_stability.csv `
+  --logs-dir docs/validation/logs/longonly_parameter_stability `
+  --backtest-dir user_data/backtest_results/longonly_parameter_stability
+```
+
+Time concentration stress:
+
+```powershell
+& .\.venv-freqtrade\Scripts\python.exe scripts\run_longonly_time_concentration_stress.py `
+  --selection-matrix-csv docs/validation/alpha_validation_matrix_longonly.csv `
+  --selection-backtest-dir user_data/backtest_results/longonly_matrix `
+  --promotion-csv docs/validation/longonly_promotion_study.csv `
+  --output-md docs/validation/analysis/longonly_time_concentration_stress.md `
+  --output-csv docs/validation/analysis/longonly_time_concentration_stress.csv
+```
+
+## Distinct-Context Bar
+
+No `VolatilityRotationMRDiagnosticLongOnlyContext` subclass was added in this pass.
+
+Reason:
+
+- the observed flush / oversold context still describes the same exposure already captured by the frozen candidate
+- forward holdouts produced `0` trades, so there is no new distributed evidence that a simple extra context gate would materially improve robustness
+- relabeling the same burst would not clear the bar for a genuinely distinct research-only subclass
