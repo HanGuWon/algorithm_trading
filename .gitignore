@@ -35,6 +35,18 @@ docs/validation/analysis/*
 !docs/validation/analysis/signal_event_study.csv
 !docs/validation/analysis/signal_indicator_diagnostics.md
 !docs/validation/analysis/signal_indicator_diagnostics.csv
+!docs/validation/analysis/longonly_concentration_risk.md
+!docs/validation/analysis/longonly_concentration_risk.csv
+!docs/validation/analysis/longonly_regime_context.md
+!docs/validation/analysis/longonly_regime_context.csv
+!docs/validation/analysis/longonly_signal_quality.md
+!docs/validation/analysis/longonly_signal_quality.csv
+!docs/validation/analysis/longonly_cost_stress.md
+!docs/validation/analysis/longonly_cost_stress.csv
+!docs/validation/analysis/longonly_parameter_stability.md
+!docs/validation/analysis/longonly_parameter_stability.csv
+!docs/validation/analysis/longonly_time_concentration_stress.md
+!docs/validation/analysis/longonly_time_concentration_stress.csv
 
 user_data/configs/volatility_rotation_mr_private.json
 user_data/configs/volatility_rotation_mr_private.*.json

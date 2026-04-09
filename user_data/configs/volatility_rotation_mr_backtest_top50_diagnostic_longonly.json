@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schema.freqtrade.io/schema.json",
+  "add_config_files": [
+    "volatility_rotation_mr_base.json",
+    "volatility_rotation_mr_backtest_union_top50_pairs.json"
+  ],
+  "strategy": "VolatilityRotationMRDiagnosticLongOnly",
+  "dry_run": true,
+  "db_url": "sqlite:///user_data/tradesv3_volatility_rotation_mr_backtest_top50_diagnostic_longonly.sqlite",
+  "exchange": {
+    "key": "",
+    "secret": "",
+    "password": ""
+  },
+  "pairlists": [
+    {
+      "method": "StaticPairList"
+    }
+  ]
+}

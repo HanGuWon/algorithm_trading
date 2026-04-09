@@ -1,0 +1,12 @@
+label,changed_parameter,anchor,window_months,timerange,pair_count,vol_z_min,price_z_threshold,bb_width_min,adx_1h_max,slope_cap,raw_trade_count,profit_pct,profit_usdt,max_drawdown_pct,results_zip
+baseline,baseline,2024-01-01,6,20240101-20240701,50,1.0,1.5,0.02,24,0.006,27,7.33,733.229,0.5,backtest-result-2026-04-05_21-11-04.zip
+vol_z_min_down,vol_z_min,2024-01-01,6,20240101-20240701,50,0.85,1.5,0.02,24,0.006,28,7.2,720.114,0.63,backtest-result-2026-04-05_21-12-38.zip
+vol_z_min_up,vol_z_min,2024-01-01,6,20240101-20240701,50,1.15,1.5,0.02,24,0.006,27,7.07,706.94,0.5,backtest-result-2026-04-05_21-14-11.zip
+price_z_threshold_down,price_z_threshold,2024-01-01,6,20240101-20240701,50,1.0,1.35,0.02,24,0.006,27,7.33,733.229,0.5,backtest-result-2026-04-05_21-15-41.zip
+price_z_threshold_up,price_z_threshold,2024-01-01,6,20240101-20240701,50,1.0,1.65,0.02,24,0.006,27,7.33,733.229,0.5,backtest-result-2026-04-05_21-17-13.zip
+bb_width_min_down,bb_width_min,2024-01-01,6,20240101-20240701,50,1.0,1.5,0.015,24,0.006,27,7.33,733.229,0.5,backtest-result-2026-04-05_21-18-37.zip
+bb_width_min_up,bb_width_min,2024-01-01,6,20240101-20240701,50,1.0,1.5,0.025,24,0.006,27,7.33,733.229,0.5,backtest-result-2026-04-05_21-20-06.zip
+adx_1h_max_down,adx_1h_max,2024-01-01,6,20240101-20240701,50,1.0,1.5,0.02,22,0.006,22,6.39,639.025,0.0,backtest-result-2026-04-05_21-21-29.zip
+adx_1h_max_up,adx_1h_max,2024-01-01,6,20240101-20240701,50,1.0,1.5,0.02,26,0.006,30,8.21,821.4,0.5,backtest-result-2026-04-05_21-23-01.zip
+slope_cap_down,slope_cap,2024-01-01,6,20240101-20240701,50,1.0,1.5,0.02,24,0.005,27,7.33,733.229,0.5,backtest-result-2026-04-05_21-24-34.zip
+slope_cap_up,slope_cap,2024-01-01,6,20240101-20240701,50,1.0,1.5,0.02,24,0.007,27,7.33,733.229,0.5,backtest-result-2026-04-05_21-26-02.zip

@@ -1,0 +1,22 @@
+scenario,raw_trade_count,profit_usdt,max_drawdown_usdt,status,analysis,bucket,windows,max_drawdown_pct,month,anchor
+selection_reference,38,768.682,111.933,survives,stress_scenarios,,,,,
+remove_best_month,15,46.275,111.933,weakens materially,stress_scenarios,,,,,
+remove_best_two_months,13,-18.521,111.933,collapses,stress_scenarios,,,,,
+remove_best_anchor_window,11,35.453,111.933,weakens materially,stress_scenarios,,,,,
+promotion_holdouts_only,0,0.0,0.0,collapses,stress_scenarios,,,,,
+,38,768.682,,,selection_vs_holdout,selection_like_windows,5.0,1.12,,
+,0,0.0,,,selection_vs_holdout,forward_holdout_windows,2.0,0.0,,
+,23,722.40748511,,,month_profit,,,,2024-01,
+,2,64.79539017,,,month_profit,,,,2023-06,
+,2,58.049522370000005,,,month_profit,,,,2024-03,
+,2,48.87523651,,,month_profit,,,,2022-11,
+,1,28.99617084,,,month_profit,,,,2022-04,
+,1,-3.49388135,,,month_profit,,,,2023-11,
+,1,-5.87158053,,,month_profit,,,,2023-12,
+,2,-47.22773245,,,month_profit,,,,2024-06,
+,4,-97.84836603,,,month_profit,,,,2022-05,
+,27,733.22927503,,,anchor_profit,,,,,2024-01-01
+,2,64.79539017,,,anchor_profit,,,,,2023-01-01
+,2,48.87523651,,,anchor_profit,,,,,2022-07-01
+,2,-9.36546188,,,anchor_profit,,,,,2023-07-01
+,5,-68.85219519,,,anchor_profit,,,,,2022-01-01

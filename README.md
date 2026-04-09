@@ -20,6 +20,34 @@ Primary broader alpha-validation path:
 - `docs/validation/analysis/signal_event_study.md`
 - `docs/validation/analysis/signal_indicator_diagnostics.md`
 
+Published long-only research path:
+- `scripts/longonly_research_utils.py`
+- `scripts/run_longonly_validation_matrix.py`
+- `scripts/run_longonly_concentration_analysis.py`
+- `scripts/run_longonly_regime_context.py`
+- `scripts/run_longonly_signal_quality.py`
+- `scripts/run_longonly_cost_stress.py`
+- `scripts/run_longonly_promotion_study.py`
+- `scripts/run_longonly_parameter_stability.py`
+- `scripts/run_longonly_time_concentration_stress.py`
+- `user_data/configs/volatility_rotation_mr_backtest_top50_longonly.json`
+- `user_data/configs/volatility_rotation_mr_backtest_top50_diagnostic_longonly.json`
+- `user_data/configs/volatility_rotation_mr_backtest_union_top50_pairs.json`
+- `docs/validation/longonly_research_path.md`
+- `docs/validation/alpha_validation_matrix_longonly.md`
+- `docs/validation/longonly_promotion_study.md`
+- `docs/validation/analysis/longonly_concentration_risk.md`
+- `docs/validation/analysis/longonly_regime_context.md`
+- `docs/validation/analysis/longonly_signal_quality.md`
+- `docs/validation/analysis/longonly_cost_stress.md`
+- `docs/validation/analysis/longonly_parameter_stability.md`
+- `docs/validation/analysis/longonly_time_concentration_stress.md`
+
+Current public endpoint:
+- full long/short remains parked
+- the only follow-up candidate tested beyond the broader PTI path is `VolatilityRotationMRDiagnosticLongOnly`
+- the frozen-candidate promotion study failed its forward holdouts and ends at `No-go / Park` even for long-only
+
 Single-anchor 2024 PTI reference path:
 - `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json`
 - `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01_diagnostic.json`

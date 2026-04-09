@@ -3,7 +3,7 @@
 This repository commits only small, safe validation artifacts.
 Large raw backtest blobs, exchange secrets, private overlays, and live credentials must not be committed.
 
-Validation status as of `2026-04-04`:
+Validation status as of `2026-04-05`:
 
 - Freqtrade version: `2026.2`
 - Python version: `3.13.3`
@@ -224,6 +224,98 @@ Interpretation:
 - The gate stack is finding a coherent long-side oversold/reversal regime.
 - The short side remains both scarce and lower-quality.
 
+## 8. Long-Only Robustness Pass
+
+Primary artifacts:
+
+- `docs/validation/longonly_research_path.md`
+- `docs/validation/alpha_validation_matrix_longonly.md`
+- `docs/validation/longonly_promotion_study.md`
+- `docs/validation/analysis/longonly_concentration_risk.md`
+- `docs/validation/analysis/longonly_regime_context.md`
+- `docs/validation/analysis/longonly_signal_quality.md`
+- `docs/validation/analysis/longonly_cost_stress.md`
+- `docs/validation/analysis/longonly_parameter_stability.md`
+- `docs/validation/analysis/longonly_time_concentration_stress.md`
+
+Headline long-only matrix:
+
+| Variant | Raw trades | Unique trades | Profit | Usable windows |
+| --- | ---: | ---: | ---: | ---: |
+| baseline long-only | `12` | `12` | `339.778 USDT` | `0` |
+| diagnostic long-only | `38` | `38` | `768.682 USDT` | `1` |
+
+Concentration summary:
+
+- Pair concentration is not the main failure mode:
+  - diagnostic long-only top-1 pair share: `7.7%`
+  - diagnostic long-only top-5 pair share: `31.8%`
+  - diagnostic long-only remove-top-5 still leaves `524.535 USDT`
+- Time concentration remains the main weakness:
+  - removing the `2024-01-01 -> 2024-07-01` anchor leaves only `35.453 USDT` on `11` trades
+  - removing month `2024-01` leaves only `46.275 USDT` on `15` trades
+
+Regime summary:
+
+- The edge is not broad across contexts.
+- Baseline long-only signals land entirely in `flush_high` / `oversold_high`.
+- Diagnostic long-only signals also land entirely in `flush_high` / `oversold_high`.
+- Diagnostic long-only is strongest in `btc_neutral` and `btc_downtrend`; the lone `btc_uptrend` trade lost money.
+
+Signal-quality summary:
+
+- Long-only is not obviously blocked by raw opportunity scarcity alone:
+  - baseline raw signals: `12`
+  - diagnostic raw signals: `38`
+- Structurally valid near-misses are abundant:
+  - baseline good near-misses: `30`
+  - diagnostic good near-misses: `83`
+- The dominant missed-entry blocker is `bullish_reversal`, not pair availability.
+
+Cost-stress summary:
+
+- The long-only edge survives reasonable stress.
+- Diagnostic long-only stays positive from `768.682 USDT` baseline to `716.009 USDT` under worse fee plus slippage stress.
+
+## 9. Frozen Long-Only Promotion Study
+
+This pass did not reopen optimization.
+It froze `VolatilityRotationMRDiagnosticLongOnly` at the published diagnostic-long-only defaults and separated candidate-selection evidence from promotion evidence.
+
+Promotion artifacts:
+
+- `docs/validation/longonly_promotion_study.md`
+- `docs/validation/longonly_promotion_study.csv`
+- `docs/validation/analysis/longonly_parameter_stability.md`
+- `docs/validation/analysis/longonly_time_concentration_stress.md`
+
+Forward holdouts:
+
+| Window | Trades | Profit | Drawdown |
+| --- | ---: | ---: | ---: |
+| `2024-07-01 -> 2025-01-01` | `0` | `0.000 USDT` | `0.00%` |
+| `2025-01-01 -> 2025-07-01` | `0` | `0.000 USDT` | `0.00%` |
+| `2024-07-01 -> 2025-07-01` (12m view) | `0` | `0.000 USDT` | `0.00%` |
+
+Interpretation:
+
+- the only follow-up candidate tested after the broader PTI path was `VolatilityRotationMRDiagnosticLongOnly`
+- the frozen candidate had no forward promotion sample at all
+- the broader local long-only package remains publishable and reproducible, but it is not promotable on current holdout evidence
+
+Parameter-stability summary:
+
+- the `2024-01-01 -> 2024-07-01` burst was locally stable under mild one-parameter perturbations
+- `vol_z_min` and `adx_1h_max` moved realized trade count and PnL, but the edge did not collapse inside that profitable window
+- local threshold stability does not rescue the missing forward sample
+
+Time-concentration summary:
+
+- remove best month `2024-01`: `15` trades, `46.275 USDT`
+- remove best 2 months: `13` trades, `-18.521 USDT`
+- remove best anchor `2024-01-01 -> 2024-07-01`: `11` trades, `35.453 USDT`
+- forward holdout windows: `0` trades, `0.000 USDT`
+
 ## Final Recommendation
 
 Expanded candidate-universe research materially improved sample density.
@@ -234,9 +326,12 @@ However:
 - only one non-overlapping diagnostic window reaches a usable sample on its own
 - long-side evidence dominates almost completely
 - short-side raw signals remain weak even when they occasionally produce realized profits
+- long-only survives pair concentration and cost stress, but remains heavily concentrated in the `2024-01` flush-rebound environment
+- the frozen long-only candidate produced `0` trades across both forward holdouts and the 12m forward view
 
 Decision:
 
 - `No-go` for full long/short optimization right now.
-- `Yes` for limited long-only diagnostic research if the goal is to keep exploring the thesis.
-- `Park` the full long/short strategy until a broader history span or a demonstrably denser regime design produces a better-distributed sample.
+- `No-go / Park` for `VolatilityRotationMRDiagnosticLongOnly` in its current frozen form.
+- no additional context-gated subclass was added because the current context labels mostly relabel the same flush / oversold burst and do not improve distribution.
+- `Park` the strategy family until materially new evidence or a clearly distinct, better-distributed context design appears.
