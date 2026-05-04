@@ -49,6 +49,7 @@ jobs:
       - name: Static smoke gate
         run: |
           docker run --rm \
+            -e PYTHONPYCACHEPREFIX=/tmp/pycache \
             --entrypoint python \
             -v "$PWD:/freqtrade" \
             -w /freqtrade \
@@ -117,6 +118,7 @@ jobs:
           fi
 
           docker run --rm \
+            -e PYTHONPYCACHEPREFIX=/tmp/pycache \
             --entrypoint python \
             -v "$PWD:/freqtrade" \
             -w /freqtrade \
