@@ -39,6 +39,15 @@ By default, anchors are generated from `2022-01-01` in non-overlapping 6-month w
 latest complete UTC month. Missing point-in-time pair snapshots fail the gate unless
 `--allow-missing-snapshots` is explicitly used.
 
+The runner is resumable by default. After each completed anchor/candidate backtest it writes:
+
+- `user_data/backtest_results/strict_validation/strict_validation_checkpoint.csv`
+- the corresponding raw result zip under `user_data/backtest_results/strict_validation/`
+
+If a full run stops partway through, rerun the same command and completed rows with an existing
+result zip are reused. Use `--no-resume` only when strategy code, config, data, or gate inputs have
+changed and the previous checkpoint should be ignored.
+
 For a faster syntax/config-only pass:
 
 ```bash
@@ -61,3 +70,4 @@ The full run writes:
 - `docs/validation/strict_validation_gate.csv`
 - logs under `docs/validation/logs/strict_validation/`
 - raw backtest zips under `user_data/backtest_results/strict_validation/`
+- resume checkpoint `user_data/backtest_results/strict_validation/strict_validation_checkpoint.csv`
