@@ -65,7 +65,26 @@ GitHub Actions also provides a Dockerized Freqtrade runner:
   candles and the strict-validation checkpoint
 
 The full workflow is intentionally manual because it downloads a large historical dataset and may
-take hours on GitHub-hosted runners.
+take hours.
+
+## Runner Requirements
+
+Full strict validation must run from a network that can reach Binance REST market endpoints.
+GitHub-hosted runners may be allocated in regions where Binance returns HTTP `451` restricted
+location. When that happens, the report status is `INFRA_DATA_FAILED`; this is not a strategy
+performance result and must not be used to promote or park a candidate.
+
+If GitHub-hosted runners are blocked, register a self-hosted Linux runner on a small cloud VM in a
+Binance-supported region with Docker installed, then dispatch the workflow with:
+
+- `mode=full`
+- `full_runner=self-hosted`
+- `anchors` empty for the default complete 6-month matrix, or a space-separated subset for a resume
+- `upload_artifacts=true`
+
+The self-hosted runner must have outbound access to Binance public REST APIs and enough disk for
+`user_data/data` plus raw backtest exports. Keep Binance secrets out of GitHub; full validation uses
+public market data only.
 
 The full run writes:
 
