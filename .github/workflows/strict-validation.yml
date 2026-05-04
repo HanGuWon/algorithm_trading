@@ -130,6 +130,24 @@ jobs:
       - name: Allow Docker user to write validation outputs
         run: chmod -R a+rwX docs user_data scripts
 
+      - name: Restore downloaded market data
+        uses: actions/cache@v4
+        with:
+          path: user_data/data
+          key: freqtrade-data-${{ runner.os }}-${{ github.ref_name }}-${{ hashFiles('user_data/pairs/*.json') }}
+          restore-keys: |
+            freqtrade-data-${{ runner.os }}-${{ github.ref_name }}-
+            freqtrade-data-${{ runner.os }}-
+
+      - name: Restore strict validation checkpoint
+        uses: actions/cache@v4
+        with:
+          path: user_data/backtest_results/strict_validation
+          key: strict-validation-${{ runner.os }}-${{ github.ref_name }}-${{ hashFiles('scripts/run_strict_validation.py', 'scripts/longonly_research_utils.py', 'user_data/strategies/*.py', 'user_data/configs/*.json') }}-${{ github.run_id }}
+          restore-keys: |
+            strict-validation-${{ runner.os }}-${{ github.ref_name }}-${{ hashFiles('scripts/run_strict_validation.py', 'scripts/longonly_research_utils.py', 'user_data/strategies/*.py', 'user_data/configs/*.json') }}-
+            strict-validation-${{ runner.os }}-${{ github.ref_name }}-
+
       - name: Download data and run strict gate
         run: |
           ANCHOR_ARGS=()
