@@ -32,8 +32,12 @@ per-side slippage stress:
 Run from a Freqtrade-capable Python environment:
 
 ```bash
-python scripts/run_strict_validation.py --download-data
+python scripts/run_strict_validation.py --download-data --build-missing-snapshots
 ```
+
+By default, anchors are generated from `2022-01-01` in non-overlapping 6-month windows through the
+latest complete UTC month. Missing point-in-time pair snapshots fail the gate unless
+`--allow-missing-snapshots` is explicitly used.
 
 For a faster syntax/config-only pass:
 
@@ -44,8 +48,8 @@ python scripts/run_strict_validation.py --skip-freqtrade-checks --skip-backtests
 GitHub Actions also provides a Dockerized Freqtrade runner:
 
 - pull requests run a smoke gate plus strategy/config discovery
-- manual `workflow_dispatch` with `mode=full` downloads Binance futures data and runs the full
-  strict gate
+- manual `workflow_dispatch` with `mode=full` downloads Binance futures data, builds missing
+  point-in-time snapshots, and runs the full strict gate
 - workflow artifacts contain generated reports, logs, and raw backtest exports
 
 The full workflow is intentionally manual because it downloads a large historical dataset and may
