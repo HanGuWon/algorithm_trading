@@ -41,6 +41,16 @@ For a faster syntax/config-only pass:
 python scripts/run_strict_validation.py --skip-freqtrade-checks --skip-backtests --skip-bias
 ```
 
+GitHub Actions also provides a Dockerized Freqtrade runner:
+
+- pull requests run a smoke gate plus strategy/config discovery
+- manual `workflow_dispatch` with `mode=full` downloads Binance futures data and runs the full
+  strict gate
+- workflow artifacts contain generated reports, logs, and raw backtest exports
+
+The full workflow is intentionally manual because it downloads a large historical dataset and may
+take hours on GitHub-hosted runners.
+
 The full run writes:
 
 - `docs/validation/strict_validation_gate.md`
