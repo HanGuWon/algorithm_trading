@@ -1,0 +1,181 @@
+name: Strict validation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/strict-validation.yml"
+      - "scripts/**"
+      - "user_data/configs/**"
+      - "user_data/pairs/**"
+      - "user_data/strategies/**"
+      - "docs/validation/strict_gate_spec.md"
+      - "docker-compose.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run mode"
+        required: true
+        default: "smoke"
+        type: choice
+        options:
+          - smoke
+          - full
+      anchors:
+        description: "Optional space-separated anchors. Empty uses dynamic complete 6-month windows."
+        required: false
+        default: ""
+      upload_artifacts:
+        description: "Upload validation reports/logs"
+        required: true
+        default: true
+        type: boolean
+
+env:
+  FREQTRADE_IMAGE: freqtradeorg/freqtrade:2026.2
+
+jobs:
+  smoke:
+    name: Smoke validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Pull Freqtrade image
+        run: docker pull "$FREQTRADE_IMAGE"
+
+      - name: Allow Docker user to write validation outputs
+        run: chmod -R a+rwX docs user_data scripts
+
+      - name: Static smoke gate
+        run: |
+          docker run --rm \
+            -e PYTHONPYCACHEPREFIX=/tmp/pycache \
+            --entrypoint python \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            "$FREQTRADE_IMAGE" \
+            scripts/run_strict_validation.py \
+            --skip-freqtrade-checks \
+            --skip-backtests \
+            --skip-bias \
+            --output-md docs/validation/strict_validation_smoke.md \
+            --output-csv docs/validation/strict_validation_smoke.csv
+
+      - name: Freqtrade strategy discovery
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            "$FREQTRADE_IMAGE" \
+            list-strategies \
+            --strategy-path user_data/strategies
+
+      - name: Freqtrade config checks
+        run: |
+          for config in \
+            user_data/configs/volatility_rotation_mr_backtest_top50_flush_rebound_longonly.json \
+            user_data/configs/volatility_rotation_mr_backtest_top50_delayed_confirm_longonly.json \
+            user_data/configs/volatility_rotation_mr_binance_dryrun.json
+          do
+            docker run --rm \
+              -v "$PWD:/workspace" \
+              -w /workspace \
+              "$FREQTRADE_IMAGE" \
+              show-config \
+              --config "$config"
+          done
+
+      - name: Live guard default block check
+        run: |
+          set +e
+          docker run --rm \
+            --entrypoint python \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            "$FREQTRADE_IMAGE" \
+            scripts/guard_live_readiness.py \
+            --strategy VolatilityRotationMR \
+            > /tmp/live_guard.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/live_guard.log
+          test "$status" -ne 0
+          grep -q "LIVE READINESS: blocked" /tmp/live_guard.log
+
+      - name: Upload smoke report
+        if: always() && (github.event_name == 'pull_request' || inputs.upload_artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: strict-validation-smoke
+          path: |
+            docs/validation/strict_validation_smoke.md
+            docs/validation/strict_validation_smoke.csv
+
+  full:
+    name: Full strict validation
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Pull Freqtrade image
+        run: docker pull "$FREQTRADE_IMAGE"
+
+      - name: Allow Docker user to write validation outputs
+        run: chmod -R a+rwX docs user_data scripts
+
+      - name: Restore downloaded market data
+        uses: actions/cache@v4
+        with:
+          path: user_data/data
+          key: freqtrade-data-${{ runner.os }}-${{ github.ref_name }}-${{ hashFiles('user_data/pairs/*.json') }}
+          restore-keys: |
+            freqtrade-data-${{ runner.os }}-${{ github.ref_name }}-
+            freqtrade-data-${{ runner.os }}-
+
+      - name: Restore strict validation checkpoint
+        uses: actions/cache@v4
+        with:
+          path: user_data/backtest_results/strict_validation
+          key: strict-validation-${{ runner.os }}-${{ github.ref_name }}-${{ hashFiles('scripts/run_strict_validation.py', 'scripts/longonly_research_utils.py', 'user_data/strategies/*.py', 'user_data/configs/*.json') }}-${{ github.run_id }}
+          restore-keys: |
+            strict-validation-${{ runner.os }}-${{ github.ref_name }}-${{ hashFiles('scripts/run_strict_validation.py', 'scripts/longonly_research_utils.py', 'user_data/strategies/*.py', 'user_data/configs/*.json') }}-
+            strict-validation-${{ runner.os }}-${{ github.ref_name }}-
+
+      - name: Download data and run strict gate
+        run: |
+          ANCHOR_ARGS=()
+          if [ -n "${{ inputs.anchors }}" ]; then
+            read -r -a ANCHOR_VALUES <<< "${{ inputs.anchors }}"
+            ANCHOR_ARGS=(--anchors "${ANCHOR_VALUES[@]}")
+          fi
+
+          docker run --rm \
+            -e PYTHONPYCACHEPREFIX=/tmp/pycache \
+            --entrypoint python \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            "$FREQTRADE_IMAGE" \
+            scripts/run_strict_validation.py \
+            --download-data \
+            --build-missing-snapshots \
+            "${ANCHOR_ARGS[@]}" \
+            --output-md docs/validation/strict_validation_gate.md \
+            --output-csv docs/validation/strict_validation_gate.csv
+
+      - name: Upload full validation artifacts
+        if: always() && inputs.upload_artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: strict-validation-full
+          path: |
+            docs/validation/strict_validation_gate.md
+            docs/validation/strict_validation_gate.csv
+            docs/validation/logs/strict_validation/**
+            user_data/backtest_results/strict_validation/**

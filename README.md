@@ -48,6 +48,18 @@ Current public endpoint:
 - the only follow-up candidate tested beyond the broader PTI path is `VolatilityRotationMRDiagnosticLongOnly`
 - the frozen-candidate promotion study failed its forward holdouts and ends at `No-go / Park` even for long-only
 
+Current implementation follow-up:
+- `VolatilityRotationMRFlushReboundLongOnly`
+- `VolatilityRotationMRDelayedConfirmLongOnly`
+- `scripts/run_strict_validation.py`
+- `.github/workflows/strict-validation.yml`
+- `docs/validation/strict_gate_spec.md`
+- `docker-compose.yml`
+- `docs/deployment/docker_vm_free_tier.md`
+
+These additions are research/deployment infrastructure only. They do not promote any strategy to
+live use.
+
 Single-anchor 2024 PTI reference path:
 - `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01.json`
 - `user_data/configs/volatility_rotation_mr_backtest_static_2024-01-01_diagnostic.json`
@@ -72,6 +84,18 @@ Operational helpers:
 - `scripts/preflight_binance.ps1`
 - `scripts/start_dryrun.ps1`
 - `scripts/start_live.ps1`
+- `scripts/run_strict_validation.py`
+
+Deployment helpers:
+- `docker-compose.yml`
+- `.env.example`
+- `docs/deployment/docker_vm_free_tier.md`
+- `scripts/guard_live_readiness.py`
+
+GitHub validation:
+- pull requests run `.github/workflows/strict-validation.yml` in smoke mode
+- manual workflow dispatch with `mode=full` runs the Dockerized full strict gate
+- smoke mode also verifies that live startup is blocked by default
 
 Primary layered configs:
 - `user_data/configs/volatility_rotation_mr_base.json`

@@ -1,0 +1,40 @@
+name: volatility-rotation-mr
+
+x-freqtrade-common: &freqtrade-common
+  image: ${FREQTRADE_IMAGE:-freqtradeorg/freqtrade:2026.2}
+  env_file:
+    - .env
+  environment:
+    TZ: ${TZ:-UTC}
+  volumes:
+    - ./user_data:/freqtrade/user_data
+    - ./scripts:/freqtrade/scripts:ro
+    - ./docs/validation:/freqtrade/docs/validation:ro
+  working_dir: /freqtrade
+  init: true
+
+services:
+  freqtrade-dryrun:
+    <<: *freqtrade-common
+    container_name: volatility-rotation-mr-dryrun
+    restart: unless-stopped
+    command: >
+      trade
+      --config user_data/configs/volatility_rotation_mr_binance_dryrun.json
+      --strategy ${FREQTRADE_STRATEGY:-VolatilityRotationMR}
+
+  freqtrade-live:
+    <<: *freqtrade-common
+    container_name: volatility-rotation-mr-live
+    profiles:
+      - live
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      python scripts/guard_live_readiness.py
+      --strategy "$${FREQTRADE_STRATEGY:-VolatilityRotationMR}"
+      --report "$${STRICT_VALIDATION_REPORT:-docs/validation/strict_validation_gate.md}"
+      &&
+      freqtrade trade
+      --config user_data/configs/volatility_rotation_mr_binance_live.json
+      --strategy "$${FREQTRADE_STRATEGY:-VolatilityRotationMR}"
