@@ -49,6 +49,7 @@ jobs:
       - name: Static smoke gate
         run: |
           docker run --rm \
+            --user "$(id -u):$(id -g)" \
             -e PYTHONPYCACHEPREFIX=/tmp/pycache \
             --entrypoint python \
             -v "$PWD:/freqtrade" \
@@ -64,6 +65,7 @@ jobs:
       - name: Freqtrade strategy discovery
         run: |
           docker run --rm \
+            --user "$(id -u):$(id -g)" \
             --entrypoint freqtrade \
             -v "$PWD:/freqtrade" \
             -w /freqtrade \
@@ -79,6 +81,7 @@ jobs:
             user_data/configs/volatility_rotation_mr_binance_dryrun.json
           do
             docker run --rm \
+              --user "$(id -u):$(id -g)" \
               --entrypoint freqtrade \
               -v "$PWD:/freqtrade" \
               -w /freqtrade \
@@ -118,6 +121,7 @@ jobs:
           fi
 
           docker run --rm \
+            --user "$(id -u):$(id -g)" \
             -e PYTHONPYCACHEPREFIX=/tmp/pycache \
             --entrypoint python \
             -v "$PWD:/freqtrade" \
