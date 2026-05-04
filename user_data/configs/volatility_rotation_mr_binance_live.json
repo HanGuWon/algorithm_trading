@@ -4,6 +4,10 @@
     "volatility_rotation_mr_base.json"
   ],
   "dry_run": false,
+  "max_open_trades": 2,
+  "stake_amount": 50,
+  "tradable_balance_ratio": 0.5,
+  "amend_last_stake_amount": false,
   "db_url": "sqlite:///user_data/tradesv3_volatility_rotation_mr_live.sqlite",
   "stoploss_price_type": "mark",
   "order_types": {
