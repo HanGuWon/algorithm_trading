@@ -67,10 +67,11 @@ jobs:
       - name: Freqtrade strategy discovery
         run: |
           docker run --rm \
-            --entrypoint freqtrade \
+            --entrypoint python \
             -v "$PWD:/freqtrade" \
             -w /freqtrade \
             "$FREQTRADE_IMAGE" \
+            -m freqtrade \
             list-strategies \
             --strategy-path user_data/strategies
 
@@ -82,10 +83,11 @@ jobs:
             user_data/configs/volatility_rotation_mr_binance_dryrun.json
           do
             docker run --rm \
-              --entrypoint freqtrade \
+              --entrypoint python \
               -v "$PWD:/freqtrade" \
               -w /freqtrade \
               "$FREQTRADE_IMAGE" \
+              -m freqtrade \
               show-config \
               --config "$config"
           done
