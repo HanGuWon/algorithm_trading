@@ -90,10 +90,12 @@ Deployment helpers:
 - `docker-compose.yml`
 - `.env.example`
 - `docs/deployment/docker_vm_free_tier.md`
+- `scripts/guard_live_readiness.py`
 
 GitHub validation:
 - pull requests run `.github/workflows/strict-validation.yml` in smoke mode
 - manual workflow dispatch with `mode=full` runs the Dockerized full strict gate
+- smoke mode also verifies that live startup is blocked by default
 
 Primary layered configs:
 - `user_data/configs/volatility_rotation_mr_base.json`
