@@ -60,6 +60,9 @@ GitHub Actions also provides a Dockerized Freqtrade runner:
 - manual `workflow_dispatch` with `mode=full` downloads Binance futures data, builds missing
   point-in-time snapshots, and runs the full strict gate
 - workflow artifacts contain generated reports, logs, and raw backtest exports
+- full workflow runs restore cached `user_data/data` and
+  `user_data/backtest_results/strict_validation` when available, so reruns can reuse downloaded
+  candles and the strict-validation checkpoint
 
 The full workflow is intentionally manual because it downloads a large historical dataset and may
 take hours on GitHub-hosted runners.
