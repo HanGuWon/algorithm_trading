@@ -54,8 +54,8 @@ jobs:
           docker run --rm \
             -e PYTHONPYCACHEPREFIX=/tmp/pycache \
             --entrypoint python \
-            -v "$PWD:/freqtrade" \
-            -w /freqtrade \
+            -v "$PWD:/workspace" \
+            -w /workspace \
             "$FREQTRADE_IMAGE" \
             scripts/run_strict_validation.py \
             --skip-freqtrade-checks \
@@ -67,8 +67,8 @@ jobs:
       - name: Freqtrade strategy discovery
         run: |
           docker run --rm \
-            -v "$PWD:/freqtrade" \
-            -w /freqtrade \
+            -v "$PWD:/workspace" \
+            -w /workspace \
             "$FREQTRADE_IMAGE" \
             list-strategies \
             --strategy-path user_data/strategies
@@ -81,8 +81,8 @@ jobs:
             user_data/configs/volatility_rotation_mr_binance_dryrun.json
           do
             docker run --rm \
-              -v "$PWD:/freqtrade" \
-              -w /freqtrade \
+              -v "$PWD:/workspace" \
+              -w /workspace \
               "$FREQTRADE_IMAGE" \
               show-config \
               --config "$config"
@@ -124,8 +124,8 @@ jobs:
           docker run --rm \
             -e PYTHONPYCACHEPREFIX=/tmp/pycache \
             --entrypoint python \
-            -v "$PWD:/freqtrade" \
-            -w /freqtrade \
+            -v "$PWD:/workspace" \
+            -w /workspace \
             "$FREQTRADE_IMAGE" \
             scripts/run_strict_validation.py \
             --download-data \
