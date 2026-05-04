@@ -46,10 +46,12 @@ jobs:
       - name: Pull Freqtrade image
         run: docker pull "$FREQTRADE_IMAGE"
 
+      - name: Allow Docker user to write validation outputs
+        run: chmod -R a+rwX docs user_data scripts
+
       - name: Static smoke gate
         run: |
           docker run --rm \
-            --user "$(id -u):$(id -g)" \
             -e PYTHONPYCACHEPREFIX=/tmp/pycache \
             --entrypoint python \
             -v "$PWD:/freqtrade" \
@@ -65,7 +67,6 @@ jobs:
       - name: Freqtrade strategy discovery
         run: |
           docker run --rm \
-            --user "$(id -u):$(id -g)" \
             --entrypoint freqtrade \
             -v "$PWD:/freqtrade" \
             -w /freqtrade \
@@ -81,7 +82,6 @@ jobs:
             user_data/configs/volatility_rotation_mr_binance_dryrun.json
           do
             docker run --rm \
-              --user "$(id -u):$(id -g)" \
               --entrypoint freqtrade \
               -v "$PWD:/freqtrade" \
               -w /freqtrade \
@@ -112,6 +112,9 @@ jobs:
       - name: Pull Freqtrade image
         run: docker pull "$FREQTRADE_IMAGE"
 
+      - name: Allow Docker user to write validation outputs
+        run: chmod -R a+rwX docs user_data scripts
+
       - name: Download data and run strict gate
         run: |
           ANCHOR_ARGS=()
@@ -121,7 +124,6 @@ jobs:
           fi
 
           docker run --rm \
-            --user "$(id -u):$(id -g)" \
             -e PYTHONPYCACHEPREFIX=/tmp/pycache \
             --entrypoint python \
             -v "$PWD:/freqtrade" \
