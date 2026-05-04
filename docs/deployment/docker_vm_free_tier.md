@@ -63,7 +63,9 @@ docker compose run --rm freqtrade-dryrun test-pairlist \
 ## Live Guardrail
 
 Live is not part of the default `docker compose up`. It requires both the explicit profile and a
-promoted strategy:
+promoted strategy. The live service also runs `scripts/guard_live_readiness.py` before Freqtrade
+starts, so a mistaken live command still fails closed unless the validation and dry-run evidence is
+present.
 
 ```bash
 docker compose --profile live up -d freqtrade-live
@@ -75,6 +77,20 @@ Do not run this until:
 - Dry-run has been stable for 14 days.
 - Binance account mode is One-way and Single-Asset.
 - Existing exchange-side stop orders have been checked after restart.
+
+The host `.env` must also name the promoted strategy and include the explicit live unlock fields:
+
+```bash
+FREQTRADE_STRATEGY=PromotedStrategyClassName
+ALLOW_LIVE_TRADING=STRICT_GATE_PROMOTED_AND_DRYRUN_STABLE
+DRYRUN_STARTED_AT=YYYY-MM-DD
+LIVE_DRYRUN_MIN_DAYS=14
+STRICT_VALIDATION_REPORT=docs/validation/strict_validation_gate.md
+```
+
+The default parked `VolatilityRotationMR` strategy is always rejected by the live guard. If the
+strict validation report is not present on the VM, copy it into `docs/validation/` or point
+`STRICT_VALIDATION_REPORT` at the deployed report path.
 
 Rollback is:
 
