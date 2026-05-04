@@ -78,6 +78,10 @@ Do not run this until:
 - Binance account mode is One-way and Single-Asset.
 - Existing exchange-side stop orders have been checked after restart.
 
+The live config intentionally overrides the base config to start small: `max_open_trades=2`,
+`stake_amount=50`, and `tradable_balance_ratio=0.5`. Keep those limits for the first deployment
+unless a later PR explicitly changes the live rollout plan.
+
 The host `.env` must also name the promoted strategy and include the explicit live unlock fields:
 
 ```bash
