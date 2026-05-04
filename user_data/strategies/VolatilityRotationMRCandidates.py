@@ -14,6 +14,11 @@ class VolatilityRotationMRFlushReboundLongOnly(VolatilityRotationMRDiagnosticLon
     not require the same candle to close as a bullish reversal.
     """
 
+    live_filters_enabled = True
+    enable_live_spread_filter = True
+    enable_live_orderbook_filter = True
+    enable_live_funding_filter = True
+
     rsi_long_threshold = IntParameter(8, 28, default=18, space="buy", optimize=True)
     price_z_threshold = DecimalParameter(2.00, 4.00, default=2.80, decimals=2, space="buy", optimize=True)
     vol_z_min = DecimalParameter(0.50, 3.00, default=1.00, decimals=2, space="buy", optimize=True)
@@ -47,6 +52,11 @@ class VolatilityRotationMRDelayedConfirmLongOnly(VolatilityRotationMRDiagnosticL
     Research-only long candidate that enters after a previous-candle oversold flush
     and a next-candle reclaim confirmation.
     """
+
+    live_filters_enabled = True
+    enable_live_spread_filter = True
+    enable_live_orderbook_filter = True
+    enable_live_funding_filter = True
 
     rsi_long_threshold = IntParameter(10, 32, default=20, space="buy", optimize=True)
     price_z_threshold = DecimalParameter(1.80, 3.80, default=2.50, decimals=2, space="buy", optimize=True)
