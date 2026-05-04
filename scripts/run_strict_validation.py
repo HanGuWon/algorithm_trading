@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -23,15 +24,7 @@ from longonly_research_utils import (
 )
 
 
-DEFAULT_ANCHORS = [
-    "2022-01-01",
-    "2022-07-01",
-    "2023-01-01",
-    "2023-07-01",
-    "2024-01-01",
-    "2024-07-01",
-    "2025-01-01",
-]
+DEFAULT_START_ANCHOR = "2022-01-01"
 
 DEFAULT_CANDIDATES = [
     StrategyVariant(
@@ -49,8 +42,14 @@ DEFAULT_CANDIDATES = [
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the strict go/no-go validation gate for research candidates.")
-    parser.add_argument("--anchors", nargs="+", default=DEFAULT_ANCHORS)
+    parser.add_argument("--anchors", nargs="+", default=None)
     parser.add_argument("--window-months", type=int, default=6)
+    parser.add_argument("--start-anchor", default=DEFAULT_START_ANCHOR)
+    parser.add_argument(
+        "--latest-complete-month",
+        default="",
+        help="Latest complete month in YYYY-MM form. Defaults to the previous complete UTC month.",
+    )
     parser.add_argument("--snapshot-dir", default="user_data/pairs")
     parser.add_argument("--snapshot-top-n", type=int, default=50)
     parser.add_argument("--strategy-path", default="user_data/strategies")
@@ -58,6 +57,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pairs-file", default="user_data/pairs/binance_usdt_futures_snapshot_union_top50_2022-2025.json")
     parser.add_argument("--timeframes", nargs="+", default=["5m", "1h"])
     parser.add_argument("--download-data", action="store_true")
+    parser.add_argument("--build-missing-snapshots", action="store_true")
+    parser.add_argument("--allow-missing-snapshots", action="store_true")
     parser.add_argument("--download-timerange", default="")
     parser.add_argument("--skip-static-checks", action="store_true")
     parser.add_argument("--skip-freqtrade-checks", action="store_true")
@@ -86,7 +87,27 @@ def parse_args() -> argparse.Namespace:
         metavar=("LABEL", "STRATEGY_CLASS"),
         help="Override default candidates. Can be repeated.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.anchors is None:
+        args.anchors = default_anchors(args.start_anchor, args.window_months, args.latest_complete_month)
+    return args
+
+
+def default_anchors(start_anchor: str, window_months: int, latest_complete_month: str) -> list[str]:
+    start = pd.Timestamp(start_anchor, tz="UTC")
+    if latest_complete_month:
+        latest_month_start = pd.Timestamp(f"{latest_complete_month}-01", tz="UTC")
+        complete_boundary = latest_month_start + pd.DateOffset(months=1)
+    else:
+        now = pd.Timestamp(datetime.now(timezone.utc))
+        complete_boundary = pd.Timestamp(year=now.year, month=now.month, day=1, tz="UTC")
+
+    anchors: list[str] = []
+    cursor = start
+    while cursor + pd.DateOffset(months=window_months) <= complete_boundary:
+        anchors.append(cursor.strftime("%Y-%m-%d"))
+        cursor += pd.DateOffset(months=window_months)
+    return anchors
 
 
 def candidates_from_args(args: argparse.Namespace) -> list[StrategyVariant]:
@@ -179,6 +200,48 @@ def download_data(args: argparse.Namespace) -> pd.DataFrame:
             }
         ]
     )
+
+
+def build_missing_snapshots(args: argparse.Namespace) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    snapshot_dir = Path(args.snapshot_dir)
+    logs_dir = Path(args.logs_dir)
+    for anchor_text in args.anchors:
+        snapshot = snapshot_path(snapshot_dir, anchor_text, args.snapshot_top_n)
+        if snapshot.exists():
+            rows.append(
+                {
+                    "check": "build_missing_snapshot",
+                    "status": "skipped",
+                    "detail": f"{snapshot.name} already exists",
+                }
+            )
+            continue
+
+        report_stem = f"historical_snapshot_{anchor_text}_top{args.snapshot_top_n}"
+        command = [
+            sys.executable,
+            "scripts/build_historical_pair_snapshot.py",
+            "--reference-date",
+            anchor_text,
+            "--top-n",
+            str(args.snapshot_top_n),
+            "--output-json",
+            str(snapshot),
+            "--output-csv",
+            str(logs_dir / f"{report_stem}.csv"),
+            "--output-md",
+            str(logs_dir / f"{report_stem}.md"),
+        ]
+        completed = run_command(command, log_path=logs_dir / f"{report_stem}.log", check=False)
+        rows.append(
+            {
+                "check": "build_missing_snapshot",
+                "status": "pass" if completed.returncode == 0 else "fail",
+                "detail": f"{snapshot.name}; exit_code={completed.returncode}",
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def stressed_profit(frame: pd.DataFrame, target_fee: float, slippage_per_side: float) -> pd.Series:
@@ -302,8 +365,9 @@ def run_validation_matrix(args: argparse.Namespace, candidates: list[StrategyVar
 
 
 def evaluate_candidate(args: argparse.Namespace, label: str, matrix: pd.DataFrame, trades: pd.DataFrame) -> dict[str, object]:
-    subset = matrix[(matrix["strategy_variant"] == label) & (matrix["status"] == "backtested")].copy()
-    subset = subset.sort_values("anchor")
+    all_rows = matrix[matrix["strategy_variant"] == label].copy()
+    missing_snapshot_count = int((all_rows["status"] == "missing_snapshot").sum()) if not all_rows.empty else 0
+    subset = all_rows[all_rows["status"] == "backtested"].copy().sort_values("anchor")
     total_trades = int(subset["raw_trade_count"].sum()) if not subset.empty else 0
     usable_windows = int((subset["raw_trade_count"] >= args.min_window_trades).sum()) if not subset.empty else 0
     latest = subset.tail(args.latest_window_count)
@@ -316,6 +380,7 @@ def evaluate_candidate(args: argparse.Namespace, label: str, matrix: pd.DataFram
     pair_share = max_contribution_share(trades, "pair")
 
     checks = {
+        "no_missing_snapshots": missing_snapshot_count == 0 or args.allow_missing_snapshots,
         "total_trades": total_trades >= args.min_total_trades,
         "usable_windows": usable_windows >= args.min_usable_windows,
         "latest_positive_windows": latest_positive >= args.min_latest_positive_windows,
@@ -328,6 +393,7 @@ def evaluate_candidate(args: argparse.Namespace, label: str, matrix: pd.DataFram
     return {
         "strategy_variant": label,
         "decision": "PROMOTE_PENDING_BIAS" if all(checks.values()) else "PARK",
+        "missing_snapshot_count": missing_snapshot_count,
         "total_trades": total_trades,
         "usable_windows": usable_windows,
         "latest_positive_windows": latest_positive,
@@ -472,12 +538,14 @@ def write_report(
         f"- Candidates: `{', '.join(candidate.strategy for candidate in candidates)}`",
         f"- Stress: fee `{args.stress_fee_per_side}` per side plus slippage `{args.stress_slippage_per_side}` per side",
         f"- Window: `{args.window_months}m` non-overlapping anchors",
+        f"- Anchors: `{', '.join(args.anchors)}`",
         "",
         "## Gate Thresholds",
         "",
         markdown_table(
             pd.DataFrame(
             [
+                {"gate": "missing_snapshots", "threshold": "0 unless --allow-missing-snapshots is used"},
                 {"gate": "total_trades", "threshold": args.min_total_trades},
                 {"gate": "window_trades", "threshold": f">= {args.min_window_trades} in {args.min_usable_windows} windows"},
                 {"gate": "latest_positive_windows", "threshold": f">= {args.min_latest_positive_windows} of latest {args.latest_window_count}"},
@@ -539,6 +607,8 @@ def main() -> None:
         preflight_frames.append(run_freqtrade_checks(args, candidates))
     if args.download_data:
         preflight_frames.append(download_data(args))
+    if args.build_missing_snapshots:
+        preflight_frames.append(build_missing_snapshots(args))
 
     matrix = pd.DataFrame()
     trades_by_variant: dict[str, pd.DataFrame] = {}
