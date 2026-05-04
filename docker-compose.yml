@@ -8,6 +8,8 @@ x-freqtrade-common: &freqtrade-common
     TZ: ${TZ:-UTC}
   volumes:
     - ./user_data:/freqtrade/user_data
+    - ./scripts:/freqtrade/scripts:ro
+    - ./docs/validation:/freqtrade/docs/validation:ro
   working_dir: /freqtrade
   init: true
 
@@ -27,7 +29,12 @@ services:
     profiles:
       - live
     restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
     command: >
-      trade
+      python scripts/guard_live_readiness.py
+      --strategy "$${FREQTRADE_STRATEGY:-VolatilityRotationMR}"
+      --report "$${STRICT_VALIDATION_REPORT:-docs/validation/strict_validation_gate.md}"
+      &&
+      freqtrade trade
       --config user_data/configs/volatility_rotation_mr_binance_live.json
-      --strategy ${FREQTRADE_STRATEGY:-VolatilityRotationMR}
+      --strategy "$${FREQTRADE_STRATEGY:-VolatilityRotationMR}"
