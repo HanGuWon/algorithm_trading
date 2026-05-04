@@ -15,6 +15,7 @@ on:
       - main
     paths:
       - ".github/workflows/strict-validation.yml"
+      - "scripts/run_strict_validation.py"
   workflow_dispatch:
     inputs:
       mode:

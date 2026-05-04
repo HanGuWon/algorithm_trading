@@ -136,6 +136,30 @@ def run_command(command: list[str], log_path: Path | None = None, check: bool = 
     return completed
 
 
+def classify_failure_log(log_path: Path) -> str:
+    if not log_path.exists():
+        return "log_missing"
+    text = log_path.read_text(encoding="utf-8", errors="replace").lower()
+    if "restricted location" in text and "451" in text:
+        return "binance_restricted_location"
+    if "could not load markets" in text or "markets were not loaded" in text:
+        return "exchange_markets_unavailable"
+    if "no data found" in text or "missing data" in text:
+        return "market_data_missing"
+    return "command_failed"
+
+
+def command_detail(label: str, completed: subprocess.CompletedProcess[str], log_path: Path, extra: str = "") -> str:
+    parts = []
+    if extra:
+        parts.append(extra)
+    parts.append(f"exit_code={completed.returncode}")
+    if completed.returncode != 0:
+        parts.append(f"failure_class={classify_failure_log(log_path)}")
+        parts.append(f"log={log_path}")
+    return "; ".join(parts)
+
+
 def run_static_checks() -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     python_files = list(Path("scripts").glob("*.py")) + list(Path("user_data/strategies").glob("*.py"))
@@ -161,12 +185,13 @@ def run_freqtrade_checks(args: argparse.Namespace, candidates: list[StrategyVari
         ("test_pairlist", [sys.executable, "-m", "freqtrade", "test-pairlist", "--config", config, "--quote", "USDT", "--print-json"]),
     ]
     for label, command in commands:
-        completed = run_command(command, log_path=Path(args.logs_dir) / f"{label}.log", check=False)
+        log_path = Path(args.logs_dir) / f"{label}.log"
+        completed = run_command(command, log_path=log_path, check=False)
         rows.append(
             {
                 "check": label,
                 "status": "pass" if completed.returncode == 0 else "fail",
-                "detail": f"exit_code={completed.returncode}",
+                "detail": command_detail(label, completed, log_path),
             }
         )
     return pd.DataFrame(rows)
@@ -200,13 +225,19 @@ def download_data(args: argparse.Namespace) -> pd.DataFrame:
         "--timeframes",
         *args.timeframes,
     ]
-    completed = run_command(command, log_path=Path(args.logs_dir) / "download_data.log", check=False)
+    log_path = Path(args.logs_dir) / "download_data.log"
+    completed = run_command(command, log_path=log_path, check=False)
     return pd.DataFrame(
         [
             {
                 "check": "download_data",
                 "status": "pass" if completed.returncode == 0 else "fail",
-                "detail": f"timerange={timerange}; timeframes={','.join(args.timeframes)}; exit_code={completed.returncode}",
+                "detail": command_detail(
+                    "download_data",
+                    completed,
+                    log_path,
+                    extra=f"timerange={timerange}; timeframes={','.join(args.timeframes)}",
+                ),
             }
         ]
     )
@@ -243,12 +274,18 @@ def build_missing_snapshots(args: argparse.Namespace) -> pd.DataFrame:
             "--output-md",
             str(logs_dir / f"{report_stem}.md"),
         ]
-        completed = run_command(command, log_path=logs_dir / f"{report_stem}.log", check=False)
+        log_path = logs_dir / f"{report_stem}.log"
+        completed = run_command(command, log_path=log_path, check=False)
         rows.append(
             {
                 "check": "build_missing_snapshot",
                 "status": "pass" if completed.returncode == 0 else "fail",
-                "detail": f"{snapshot.name}; exit_code={completed.returncode}",
+                "detail": command_detail(
+                    "build_missing_snapshot",
+                    completed,
+                    log_path,
+                    extra=snapshot.name,
+                ),
             }
         )
     return pd.DataFrame(rows)
@@ -586,6 +623,8 @@ def write_report(
     matrix: pd.DataFrame,
     decisions: pd.DataFrame,
     bias: pd.DataFrame,
+    final_status_override: str = "",
+    infrastructure_note: str = "",
 ) -> None:
     output_md = Path(args.output_md)
     output_md.parent.mkdir(parents=True, exist_ok=True)
@@ -606,6 +645,8 @@ def write_report(
         final_status = "PARK_BIAS_FAILED"
     if args.skip_backtests:
         final_status = "NOT_RUN"
+    if final_status_override:
+        final_status = final_status_override
 
     lines = [
         "# Strict Validation Gate",
@@ -616,44 +657,58 @@ def write_report(
         f"- Window: `{args.window_months}m` non-overlapping anchors",
         f"- Anchors: `{', '.join(args.anchors)}`",
         "",
-        "## Gate Thresholds",
-        "",
-        markdown_table(
-            pd.DataFrame(
-            [
-                {"gate": "missing_snapshots", "threshold": "0 unless --allow-missing-snapshots is used"},
-                {"gate": "total_trades", "threshold": args.min_total_trades},
-                {"gate": "window_trades", "threshold": f">= {args.min_window_trades} in {args.min_usable_windows} windows"},
-                {"gate": "latest_positive_windows", "threshold": f">= {args.min_latest_positive_windows} of latest {args.latest_window_count}"},
-                {"gate": "max_drawdown_pct", "threshold": f"<= {args.max_drawdown_pct}"},
-                {"gate": "profit_factor", "threshold": f">= {args.min_profit_factor}"},
-                {"gate": "month_profit_share", "threshold": f"<= {args.max_month_profit_share}"},
-                {"gate": "pair_profit_share", "threshold": f"<= {args.max_pair_profit_share}"},
-            ]
-            )
-        ),
-        "",
-        "## Preflight",
-        "",
-        markdown_table(preflight) if not preflight.empty else "No preflight checks were run.",
-        "",
-        "## Matrix",
-        "",
-        markdown_table(matrix) if not matrix.empty else "Backtests were not run.",
-        "",
-        "## Decisions",
-        "",
-        markdown_table(decisions) if not decisions.empty else "No candidate decisions were produced.",
-        "",
-        "## Bias Checks",
-        "",
-        markdown_table(bias) if not bias.empty else "Bias checks were not run because no candidate passed the preliminary gate or `--skip-bias` was used.",
-        "",
-        "## Candidate Definitions",
-        "",
-        markdown_table(pd.DataFrame([asdict(candidate) for candidate in candidates])),
-        "",
     ]
+    if infrastructure_note:
+        lines.extend(
+            [
+                "## Infrastructure Failure",
+                "",
+                infrastructure_note,
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "## Gate Thresholds",
+            "",
+            markdown_table(
+                pd.DataFrame(
+                    [
+                        {"gate": "missing_snapshots", "threshold": "0 unless --allow-missing-snapshots is used"},
+                        {"gate": "total_trades", "threshold": args.min_total_trades},
+                        {"gate": "window_trades", "threshold": f">= {args.min_window_trades} in {args.min_usable_windows} windows"},
+                        {"gate": "latest_positive_windows", "threshold": f">= {args.min_latest_positive_windows} of latest {args.latest_window_count}"},
+                        {"gate": "max_drawdown_pct", "threshold": f"<= {args.max_drawdown_pct}"},
+                        {"gate": "profit_factor", "threshold": f">= {args.min_profit_factor}"},
+                        {"gate": "month_profit_share", "threshold": f"<= {args.max_month_profit_share}"},
+                        {"gate": "pair_profit_share", "threshold": f"<= {args.max_pair_profit_share}"},
+                    ]
+                )
+            ),
+            "",
+            "## Preflight",
+            "",
+            markdown_table(preflight) if not preflight.empty else "No preflight checks were run.",
+            "",
+            "## Matrix",
+            "",
+            markdown_table(matrix) if not matrix.empty else "Backtests were not run.",
+            "",
+            "## Decisions",
+            "",
+            markdown_table(decisions) if not decisions.empty else "No candidate decisions were produced.",
+            "",
+            "## Bias Checks",
+            "",
+            markdown_table(bias) if not bias.empty else "Bias checks were not run because no candidate passed the preliminary gate or `--skip-bias` was used.",
+            "",
+            "## Candidate Definitions",
+            "",
+            markdown_table(pd.DataFrame([asdict(candidate) for candidate in candidates])),
+            "",
+        ]
+    )
     output_md.write_text("\n".join(lines), encoding="utf-8")
 
     if args.output_csv:
@@ -672,6 +727,28 @@ def write_report(
             pd.concat(frames, ignore_index=True, sort=False).to_csv(output_csv, index=False)
 
 
+def preflight_failure_note(preflight: pd.DataFrame) -> str:
+    if preflight.empty or "status" not in preflight.columns:
+        return ""
+    failed = preflight[preflight["status"].astype(str) == "fail"].copy()
+    if failed.empty:
+        return ""
+    details = " | ".join(failed.get("detail", pd.Series(dtype=str)).astype(str))
+    checks = ", ".join(failed.get("check", pd.Series(dtype=str)).astype(str))
+    if "binance_restricted_location" in details:
+        return (
+            f"Preflight failed before backtesting (`{checks}`). Binance REST returned HTTP 451 restricted-location "
+            "from the runner network, so this result is an infrastructure/data-access failure, not a strategy "
+            "performance failure. Re-run full strict validation on a self-hosted runner or cloud VM in a Binance-supported "
+            "region, then use the checkpoint/artifact path to resume."
+        )
+    return (
+        f"Preflight failed before backtesting (`{checks}`). This is an infrastructure/data preparation failure. "
+        "Inspect the referenced logs in `docs/validation/logs/strict_validation/`, fix the runner/data/config issue, "
+        "and re-run full strict validation."
+    )
+
+
 def main() -> None:
     args = parse_args()
     candidates = candidates_from_args(args)
@@ -685,6 +762,22 @@ def main() -> None:
         preflight_frames.append(download_data(args))
     if args.build_missing_snapshots:
         preflight_frames.append(build_missing_snapshots(args))
+
+    preflight = pd.concat(preflight_frames, ignore_index=True, sort=False) if preflight_frames else pd.DataFrame()
+    infrastructure_note = preflight_failure_note(preflight)
+    if infrastructure_note and not args.skip_backtests:
+        write_report(
+            args,
+            candidates,
+            preflight,
+            pd.DataFrame(),
+            pd.DataFrame(),
+            pd.DataFrame(),
+            final_status_override="INFRA_DATA_FAILED",
+            infrastructure_note=infrastructure_note,
+        )
+        print(f"Wrote {args.output_md}")
+        raise SystemExit(2)
 
     matrix = pd.DataFrame()
     trades_by_variant: dict[str, pd.DataFrame] = {}
@@ -706,7 +799,6 @@ def main() -> None:
             if not row.empty and str(row.iloc[0]["decision"]).startswith("PROMOTE"):
                 bias_frames.append(run_bias_checks(args, candidate, first_anchor))
 
-    preflight = pd.concat(preflight_frames, ignore_index=True, sort=False) if preflight_frames else pd.DataFrame()
     bias = pd.concat(bias_frames, ignore_index=True, sort=False) if bias_frames else pd.DataFrame()
     write_report(args, candidates, preflight, matrix, decisions, bias)
     print(f"Wrote {args.output_md}")
