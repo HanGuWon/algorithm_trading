@@ -88,6 +88,23 @@ jobs:
               --config "$config"
           done
 
+      - name: Live guard default block check
+        run: |
+          set +e
+          docker run --rm \
+            --entrypoint python \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            "$FREQTRADE_IMAGE" \
+            scripts/guard_live_readiness.py \
+            --strategy VolatilityRotationMR \
+            > /tmp/live_guard.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/live_guard.log
+          test "$status" -ne 0
+          grep -q "LIVE READINESS: blocked" /tmp/live_guard.log
+
       - name: Upload smoke report
         if: always() && (github.event_name == 'pull_request' || inputs.upload_artifacts)
         uses: actions/upload-artifact@v4
