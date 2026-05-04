@@ -21,9 +21,9 @@ on:
           - smoke
           - full
       anchors:
-        description: "Space-separated non-overlapping walk-forward anchors"
-        required: true
-        default: "2022-01-01 2022-07-01 2023-01-01 2023-07-01 2024-01-01 2024-07-01 2025-01-01"
+        description: "Optional space-separated anchors. Empty uses dynamic complete 6-month windows."
+        required: false
+        default: ""
       upload_artifacts:
         description: "Upload validation reports/logs"
         required: true
@@ -110,6 +110,12 @@ jobs:
 
       - name: Download data and run strict gate
         run: |
+          ANCHOR_ARGS=()
+          if [ -n "${{ inputs.anchors }}" ]; then
+            read -r -a ANCHOR_VALUES <<< "${{ inputs.anchors }}"
+            ANCHOR_ARGS=(--anchors "${ANCHOR_VALUES[@]}")
+          fi
+
           docker run --rm \
             --entrypoint python \
             -v "$PWD:/freqtrade" \
@@ -117,7 +123,8 @@ jobs:
             "$FREQTRADE_IMAGE" \
             scripts/run_strict_validation.py \
             --download-data \
-            --anchors ${{ inputs.anchors }} \
+            --build-missing-snapshots \
+            "${ANCHOR_ARGS[@]}" \
             --output-md docs/validation/strict_validation_gate.md \
             --output-csv docs/validation/strict_validation_gate.csv
 
