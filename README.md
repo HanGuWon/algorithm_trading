@@ -52,6 +52,7 @@ Current implementation follow-up:
 - `VolatilityRotationMRFlushReboundLongOnly`
 - `VolatilityRotationMRDelayedConfirmLongOnly`
 - `scripts/run_strict_validation.py`
+- `.github/workflows/strict-validation.yml`
 - `docs/validation/strict_gate_spec.md`
 - `docker-compose.yml`
 - `docs/deployment/docker_vm_free_tier.md`
@@ -89,6 +90,10 @@ Deployment helpers:
 - `docker-compose.yml`
 - `.env.example`
 - `docs/deployment/docker_vm_free_tier.md`
+
+GitHub validation:
+- pull requests run `.github/workflows/strict-validation.yml` in smoke mode
+- manual workflow dispatch with `mode=full` runs the Dockerized full strict gate
 
 Primary layered configs:
 - `user_data/configs/volatility_rotation_mr_base.json`
