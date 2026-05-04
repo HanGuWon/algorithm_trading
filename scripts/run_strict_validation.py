@@ -68,6 +68,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-csv", default="docs/validation/strict_validation_gate.csv")
     parser.add_argument("--logs-dir", default="docs/validation/logs/strict_validation")
     parser.add_argument("--backtest-dir", default="user_data/backtest_results/strict_validation")
+    parser.add_argument("--checkpoint-csv", default="")
+    parser.add_argument("--no-resume", action="store_true")
     parser.add_argument("--db-url", default="sqlite:///user_data/tradesv3_volatility_rotation_mr_strict_validation.sqlite")
     parser.add_argument("--min-total-trades", type=int, default=150)
     parser.add_argument("--min-window-trades", type=int, default=20)
@@ -91,6 +93,12 @@ def parse_args() -> argparse.Namespace:
     if args.anchors is None:
         args.anchors = default_anchors(args.start_anchor, args.window_months, args.latest_complete_month)
     return args
+
+
+def checkpoint_path(args: argparse.Namespace) -> Path:
+    if args.checkpoint_csv:
+        return Path(args.checkpoint_csv)
+    return Path(args.backtest_dir) / "strict_validation_checkpoint.csv"
 
 
 def default_anchors(start_anchor: str, window_months: int, latest_complete_month: str) -> list[str]:
@@ -131,8 +139,10 @@ def run_command(command: list[str], log_path: Path | None = None, check: bool = 
 def run_static_checks() -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     python_files = list(Path("scripts").glob("*.py")) + list(Path("user_data/strategies").glob("*.py"))
-    for path in python_files:
-        py_compile.compile(str(path), doraise=True)
+    with tempfile.TemporaryDirectory(prefix="strict_validation_pycompile_") as temp_dir_str:
+        temp_dir = Path(temp_dir_str)
+        for path in python_files:
+            py_compile.compile(str(path), cfile=str(temp_dir / f"{path.stem}.pyc"), doraise=True)
     rows.append({"check": "python_compile", "status": "pass", "detail": f"{len(python_files)} files"})
 
     json_files = list(Path("user_data/configs").glob("*.json")) + list(Path("user_data/pairs").glob("*.json"))
@@ -244,6 +254,46 @@ def build_missing_snapshots(args: argparse.Namespace) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def load_checkpoint(args: argparse.Namespace) -> pd.DataFrame:
+    path = checkpoint_path(args)
+    if args.no_resume or not path.exists():
+        return pd.DataFrame()
+    return pd.read_csv(path)
+
+
+def write_checkpoint(args: argparse.Namespace, rows: list[dict[str, Any]]) -> None:
+    path = checkpoint_path(args)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(path, index=False)
+
+
+def checkpoint_match(
+    args: argparse.Namespace,
+    checkpoint: pd.DataFrame,
+    anchor_text: str,
+    candidate: StrategyVariant,
+    snapshot_name: str,
+    timerange: str,
+) -> dict[str, Any] | None:
+    if checkpoint.empty:
+        return None
+    subset = checkpoint[
+        (checkpoint.get("anchor", pd.Series(dtype=str)).astype(str) == anchor_text)
+        & (checkpoint.get("strategy_variant", pd.Series(dtype=str)).astype(str) == candidate.label)
+        & (checkpoint.get("strategy", pd.Series(dtype=str)).astype(str) == candidate.strategy)
+        & (checkpoint.get("snapshot", pd.Series(dtype=str)).astype(str) == snapshot_name)
+        & (checkpoint.get("timerange", pd.Series(dtype=str)).astype(str) == timerange)
+        & (checkpoint.get("status", pd.Series(dtype=str)).astype(str) == "backtested")
+    ]
+    if subset.empty:
+        return None
+    row = subset.iloc[-1].to_dict()
+    results_zip = str(row.get("results_zip", ""))
+    if results_zip and (Path(args.backtest_dir) / results_zip).exists():
+        return row
+    return None
+
+
 def stressed_profit(frame: pd.DataFrame, target_fee: float, slippage_per_side: float) -> pd.Series:
     if frame.empty:
         return pd.Series(dtype=float)
@@ -289,6 +339,7 @@ def markdown_table(frame: pd.DataFrame) -> str:
 def run_validation_matrix(args: argparse.Namespace, candidates: list[StrategyVariant]) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
     rows: list[dict[str, Any]] = []
     trades_by_variant: dict[str, list[pd.DataFrame]] = {candidate.label: [] for candidate in candidates}
+    checkpoint = load_checkpoint(args)
 
     with tempfile.TemporaryDirectory(prefix="strict_validation_") as temp_dir_str:
         temp_dir = Path(temp_dir_str)
@@ -306,12 +357,35 @@ def run_validation_matrix(args: argparse.Namespace, candidates: list[StrategyVar
                             "snapshot": snapshot.name,
                         }
                     )
+                    write_checkpoint(args, rows)
                 continue
 
             pair_count = len(load_snapshot_pairs(snapshot))
             timerange, start, end = make_timerange(anchor, args.window_months)
             _ = (start, end)
             for candidate in candidates:
+                cached_row = checkpoint_match(
+                    args=args,
+                    checkpoint=checkpoint,
+                    anchor_text=anchor_text,
+                    candidate=candidate,
+                    snapshot_name=snapshot.name,
+                    timerange=timerange,
+                )
+                if cached_row is not None:
+                    zip_path = Path(args.backtest_dir) / str(cached_row["results_zip"])
+                    _, trades = parse_backtest_zip(zip_path, candidate.strategy)
+                    adjusted = stressed_profit(trades, args.stress_fee_per_side, args.stress_slippage_per_side)
+                    if not trades.empty:
+                        trades = trades.copy()
+                        trades["anchor"] = anchor_text
+                        trades["stressed_profit_abs"] = adjusted
+                        trades_by_variant[candidate.label].append(trades)
+                    cached_row["source"] = "checkpoint"
+                    rows.append(cached_row)
+                    write_checkpoint(args, rows)
+                    continue
+
                 config_path = write_temp_config(
                     temp_dir=temp_dir,
                     base_config=Path(args.base_config),
@@ -354,8 +428,10 @@ def run_validation_matrix(args: argparse.Namespace, candidates: list[StrategyVar
                         "drawdown_pct": round(float(strategy_data.get("max_drawdown_account", 0.0)) * 100.0, 2),
                         "profit_factor_stressed": round(profit_factor(adjusted), 3),
                         "results_zip": zip_path.name,
+                        "source": "backtest",
                     }
                 )
+                write_checkpoint(args, rows)
 
     combined_trades = {
         label: pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
