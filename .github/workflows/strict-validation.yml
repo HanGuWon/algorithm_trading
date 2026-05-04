@@ -26,6 +26,14 @@ on:
         options:
           - smoke
           - full
+      full_runner:
+        description: "Runner label for the full validation job. Use self-hosted when GitHub hosted runners cannot reach Binance."
+        required: true
+        default: "ubuntu-latest"
+        type: choice
+        options:
+          - ubuntu-latest
+          - self-hosted
       anchors:
         description: "Optional space-separated anchors. Empty uses dynamic complete 6-month windows."
         required: false
@@ -125,7 +133,7 @@ jobs:
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.mode == 'full') ||
       (github.event_name == 'push' && contains(github.event.head_commit.message, '[run-full-strict-validation]'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.full_runner || 'ubuntu-latest' }}
     timeout-minutes: 360
 
     steps:
