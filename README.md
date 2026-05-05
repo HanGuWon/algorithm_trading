@@ -52,8 +52,10 @@ Current implementation follow-up:
 - `VolatilityRotationMRFlushReboundLongOnly`
 - `VolatilityRotationMRDelayedConfirmLongOnly`
 - `scripts/run_strict_validation.py`
+- `scripts/run_cloud_strict_validation.sh`
 - `.github/workflows/strict-validation.yml`
 - `docs/validation/strict_gate_spec.md`
+- `docs/validation/cloud_strict_validation_runbook.md`
 - `docker-compose.yml`
 - `docs/deployment/docker_vm_free_tier.md`
 
@@ -91,6 +93,7 @@ Deployment helpers:
 - `.env.example`
 - `docs/deployment/docker_vm_free_tier.md`
 - `scripts/guard_live_readiness.py`
+- `scripts/check_dryrun_container.sh`
 
 GitHub validation:
 - pull requests run `.github/workflows/strict-validation.yml` in smoke mode
