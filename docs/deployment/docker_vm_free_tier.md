@@ -49,6 +49,8 @@ Before dry-run or live operation from a Windows workstation:
 On Linux hosts, use the Docker logs plus Freqtrade config checks:
 
 ```bash
+docker compose config
+
 docker compose run --rm freqtrade-dryrun list-strategies \
   --config user_data/configs/volatility_rotation_mr_binance_dryrun.json
 
@@ -59,6 +61,15 @@ docker compose run --rm freqtrade-dryrun test-pairlist \
   --config user_data/configs/volatility_rotation_mr_binance_dryrun.json \
   --quote USDT --print-json
 ```
+
+Or run the bundled dry-run container check:
+
+```bash
+bash scripts/check_dryrun_container.sh
+```
+
+This only checks container/config/pairlist readiness. It does not prove strategy profitability.
+Profitability requires `docs/validation/strict_validation_gate.md` to report `PROMOTE`.
 
 ## Live Guardrail
 
