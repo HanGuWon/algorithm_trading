@@ -35,6 +35,13 @@ Run from a Freqtrade-capable Python environment:
 python scripts/run_strict_validation.py --download-data --build-missing-snapshots
 ```
 
+On a Docker-only Linux validation VM, use the wrapper instead:
+
+```bash
+bash scripts/run_cloud_strict_validation.sh smoke
+bash scripts/run_cloud_strict_validation.sh full
+```
+
 By default, anchors are generated from `2022-01-01` in non-overlapping 6-month windows through the
 latest complete UTC month. Missing point-in-time pair snapshots fail the gate unless
 `--allow-missing-snapshots` is explicitly used.
@@ -85,6 +92,9 @@ Binance-supported region with Docker installed, then dispatch the workflow with:
 The self-hosted runner must have outbound access to Binance public REST APIs and enough disk for
 `user_data/data` plus raw backtest exports. Keep Binance secrets out of GitHub; full validation uses
 public market data only.
+
+For a standalone cloud VM path without registering a GitHub runner, follow
+`docs/validation/cloud_strict_validation_runbook.md`.
 
 The full run writes:
 
