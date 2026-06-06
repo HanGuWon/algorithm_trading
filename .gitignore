@@ -48,6 +48,9 @@ docs/validation/analysis/*
 !docs/validation/analysis/longonly_parameter_stability.csv
 !docs/validation/analysis/longonly_time_concentration_stress.md
 !docs/validation/analysis/longonly_time_concentration_stress.csv
+!docs/validation/analysis/major_11_backtest_summary.md
+!docs/validation/analysis/major_11_concentration_diagnostics.md
+!docs/validation/analysis/major_11_concentration_diagnostics.csv
 
 user_data/configs/volatility_rotation_mr_private.json
 user_data/configs/volatility_rotation_mr_private.*.json
