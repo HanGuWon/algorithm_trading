@@ -51,6 +51,11 @@ docs/validation/analysis/*
 !docs/validation/analysis/major_11_backtest_summary.md
 !docs/validation/analysis/major_11_concentration_diagnostics.md
 !docs/validation/analysis/major_11_concentration_diagnostics.csv
+!docs/validation/analysis/major_11_bias_audit.md
+!docs/validation/analysis/major_11_bias_audit.csv
+!docs/validation/analysis/major_11_lookahead_*.csv
+!docs/validation/analysis/major_11_flush_rebound_event_study.md
+!docs/validation/analysis/major_11_flush_rebound_event_study.csv
 
 user_data/configs/volatility_rotation_mr_private.json
 user_data/configs/volatility_rotation_mr_private.*.json
