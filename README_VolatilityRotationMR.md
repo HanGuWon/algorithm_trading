@@ -134,7 +134,7 @@ Primary files:
 - signal event-study runner: `scripts/run_signal_event_study.py`
 - indicator diagnostics: `scripts/report_signal_indicator_diagnostics.py`
 - public summary: `docs/validation/public_validation_summary.md`
-- final decision`memo: `docs/validation/final_decision_memo.md`
+- final decision memo: `docs/validation/final_decision_memo.md`
 
 Exact commands used for the broadened research pass:
 
@@ -255,12 +255,7 @@ Primary files:
 - external review response: `docs/validation/major_11_external_review_response.md`
 - major-11 backtest summary: `docs/validation/analysis/major_11_backtest_summary.md`
 - concentration diagnostics: `docs/validation/analysis/major_11_concentration_diagnostics.md`
-- bias audit: `docs/validation/analysis/major_11_bias_audit.md`
-- flush/rebound event study: `docs/validation/analysis/major_11_flush_rebound_event_study.md`
 - diagnostics runner: `scripts/run_major_11_diagnostics.py`
-- bias audit runner: `scripts/run_major_11_bias_audit.py`
-- event-study runner: `scripts/event_study_flush_rebound.py`
-- reproducible major-11 pairlist/config: `user_data/pairs/binance_usdt_futures_major_11.json`, `user_data/configs/volatility_rotation_mr_backtest_major_11.json`
 
 Current interpretation:
 
@@ -269,8 +264,6 @@ Current interpretation:
 - The flush candidate produced only 19 trades over the available major-11 futures history.
 - Removing the top 5 profitable flush trades flips the remaining result negative.
 - SOL alone contributes more than half of the net flush profit.
-- Static leakage checks, Freqtrade lookahead-analysis, and Freqtrade recursive-analysis now pass for both major-11 candidates.
-- The raw-signal event study finds only 19 flush signals and 15 delayed-confirm signals. Flush forward medians are positive at 24h and 72h, but the sample remains far below validation scale.
 
 Regenerate the latest major-11 concentration report after a backtest:
 
@@ -281,26 +274,6 @@ python scripts/run_major_11_diagnostics.py \
   --datadir user_data/data/binance \
   --output-md docs/validation/analysis/major_11_concentration_diagnostics.md \
   --output-csv docs/validation/analysis/major_11_concentration_diagnostics.csv
-```
-
-Run the mandatory follow-up leakage audit:
-
-```bash
-python scripts/run_major_11_bias_audit.py \
-  --config user_data/configs/volatility_rotation_mr_backtest_major_11.json \
-  --datadir user_data/data/binance \
-  --output-md docs/validation/analysis/major_11_bias_audit.md \
-  --output-csv docs/validation/analysis/major_11_bias_audit.csv
-```
-
-Run the raw flush/rebound event study:
-
-```bash
-python scripts/event_study_flush_rebound.py \
-  --pairs-file user_data/pairs/binance_usdt_futures_major_11.json \
-  --datadir user_data/data/binance \
-  --output-md docs/validation/analysis/major_11_flush_rebound_event_study.md \
-  --output-csv docs/validation/analysis/major_11_flush_rebound_event_study.csv
 ```
 
 ## Research-Safe 2024 PTI Backtesting Mode
