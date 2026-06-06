@@ -21,6 +21,10 @@ STATIC_FILES = [
     Path("user_data/strategies/VolatilityRotationMRCandidates.py"),
 ]
 
+WHOLE_FRAME_METHOD_PATTERN = r"\.(max|min|mean|quantile|median|std|var|rank|idxmax|idxmin|nlargest|nsmallest)\s*\("
+NP_WHOLE_FRAME_PATTERN = r"\bnp\.(nanmax|nanmin|nanmean|nanmedian|nanstd|nanvar)\s*\("
+SAFE_WINDOW_CONTEXTS = (".rolling(", ".groupby(", ".expanding(", ".ewm(")
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run major-11 lookahead, recursive, and static leakage audits.")
@@ -66,6 +70,7 @@ def line_numbered_matches(path: Path, pattern: str) -> list[str]:
 
 def static_audit() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    missing_files = [path.as_posix() for path in STATIC_FILES if not path.exists()]
     files = [path for path in STATIC_FILES if path.exists()]
 
     negative_shifts: list[str] = []
@@ -74,10 +79,22 @@ def static_audit() -> list[dict[str, Any]]:
     informative_merges: list[str] = []
     groupby_transform: list[str] = []
 
+    rows.append(
+        {
+            "check": "static_strategy_files_present",
+            "target": "strategy_files",
+            "status": "pass" if not missing_files else "fail",
+            "detail": "All expected strategy files are present." if not missing_files else "\n".join(missing_files),
+        }
+    )
+
     for path in files:
         negative_shifts.extend(line_numbered_matches(path, r"\.shift\(\s*-\d+"))
-        for match in line_numbered_matches(path, r"\.(max|min|mean)\(\)"):
-            if ".rolling(" not in match and ".groupby(" not in match:
+        for match in line_numbered_matches(path, WHOLE_FRAME_METHOD_PATTERN):
+            if not any(context in match for context in SAFE_WINDOW_CONTEXTS):
+                whole_frame_stats.append(match)
+        for match in line_numbered_matches(path, NP_WHOLE_FRAME_PATTERN):
+            if not any(context in match for context in SAFE_WINDOW_CONTEXTS):
                 whole_frame_stats.append(match)
         iloc_last.extend(line_numbered_matches(path, r"\.iloc\[\s*-1\s*\]"))
         informative_merges.extend(line_numbered_matches(path, r"merge_informative_pair\("))
@@ -96,7 +113,7 @@ def static_audit() -> list[dict[str, Any]]:
             "check": "static_whole_dataframe_stats",
             "target": "strategy_files",
             "status": "pass" if not whole_frame_stats else "review",
-            "detail": "No unconstrained .max/.min/.mean usage found in strategy files."
+            "detail": "No unconstrained whole-dataframe statistic usage found in strategy files."
             if not whole_frame_stats
             else "\n".join(whole_frame_stats),
         }
@@ -145,15 +162,30 @@ def classify_freqtrade_result(
     if completed.returncode != 0:
         status = "fail"
         detail = f"{kind} exited with code {completed.returncode}. See log."
-    elif kind == "freqtrade_lookahead_analysis" and export_path is not None and export_path.exists():
-        result = pd.read_csv(export_path)
-        has_bias = bool(result["has_bias"].astype(str).str.lower().eq("true").any()) if "has_bias" in result else False
-        if has_bias:
+    elif kind == "freqtrade_lookahead_analysis":
+        if export_path is None or not export_path.exists():
             status = "fail"
-            detail = "lookahead-analysis reported has_bias=True."
+            detail = "lookahead-analysis did not produce the expected CSV export; has_bias could not be verified."
         else:
-            status = "pass"
-            detail = "lookahead-analysis completed with has_bias=False and zero biased entry/exit signals."
+            result = pd.read_csv(export_path)
+            missing = {"has_bias"} - set(result.columns)
+            if missing:
+                status = "review"
+                detail = f"lookahead export missing required columns: {sorted(missing)}"
+            else:
+                has_bias = result["has_bias"].astype(str).str.lower().eq("true").any()
+                biased_signal_total = 0.0
+                for column in ("biased_entry_signals", "biased_exit_signals"):
+                    if column in result.columns:
+                        biased_signal_total += float(pd.to_numeric(result[column], errors="coerce").fillna(0).sum())
+                if has_bias or biased_signal_total > 0:
+                    status = "fail"
+                    detail = (
+                        "lookahead-analysis reported has_bias=True or nonzero biased entry/exit signal counts."
+                    )
+                else:
+                    status = "pass"
+                    detail = "lookahead-analysis completed with has_bias=False and zero biased entry/exit signals."
     elif any(marker in text for marker in ("bias detected", "failed", "error")):
         status = "review"
         detail = f"{kind} completed but log contains review markers."

@@ -56,6 +56,8 @@ docs/validation/analysis/*
 !docs/validation/analysis/major_11_lookahead_*.csv
 !docs/validation/analysis/major_11_flush_rebound_event_study.md
 !docs/validation/analysis/major_11_flush_rebound_event_study.csv
+!docs/validation/analysis/major_11_flush_threshold_surface.md
+!docs/validation/analysis/major_11_flush_threshold_surface.csv
 
 user_data/configs/volatility_rotation_mr_private.json
 user_data/configs/volatility_rotation_mr_private.*.json
