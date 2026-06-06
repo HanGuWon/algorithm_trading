@@ -56,6 +56,7 @@ Current implementation follow-up:
 - `scripts/run_major_11_diagnostics.py`
 - `scripts/run_major_11_bias_audit.py`
 - `scripts/event_study_flush_rebound.py`
+- `scripts/scan_flush_threshold_surface.py`
 - `.github/workflows/strict-validation.yml`
 - `docs/validation/strict_gate_spec.md`
 - `docs/validation/cloud_strict_validation_runbook.md`
@@ -63,6 +64,7 @@ Current implementation follow-up:
 - `docs/validation/analysis/major_11_concentration_diagnostics.md`
 - `docs/validation/analysis/major_11_bias_audit.md`
 - `docs/validation/analysis/major_11_flush_rebound_event_study.md`
+- `docs/validation/analysis/major_11_flush_threshold_surface.md`
 - `docker-compose.yml`
 - `docs/deployment/docker_vm_free_tier.md`
 
