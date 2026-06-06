@@ -12,27 +12,29 @@
 
 ## Result Summary
 
-| check                        | target                                     | status   | detail                                                                                                                              |
-|:-----------------------------|:-------------------------------------------|:---------|:------------------------------------------------------------------------------------------------------------------------------------|
-| static_negative_shift        | strategy_files                             | pass     | No negative shift usage found.                                                                                                      |
-| static_whole_dataframe_stats | strategy_files                             | pass     | No unconstrained .max/.min/.mean usage found in strategy files.                                                                     |
-| static_iloc_last             | strategy_files                             | info     | iloc[-1] appears only in live/analyzed-candle helper paths; not in indicator generation.                                            |
-| static_informative_merge     | strategy_files                             | pass     | merge_informative_pair is used for 1h informative data; Freqtrade shifts informative candles to avoid using unfinished HTF candles. |
-| static_rotation_ranking      | strategy_files                             | pass     | No groupby().transform() ranking pattern found in strategy files.                                                                   |
-| freqtrade_lookahead_analysis | VolatilityRotationMRFlushReboundLongOnly   | pass     | lookahead-analysis completed with has_bias=False and zero biased entry/exit signals.                                                |
-| freqtrade_recursive_analysis | VolatilityRotationMRFlushReboundLongOnly   | pass     | freqtrade_recursive_analysis completed without obvious bias/error markers.                                                          |
-| freqtrade_lookahead_analysis | VolatilityRotationMRDelayedConfirmLongOnly | pass     | lookahead-analysis completed with has_bias=False and zero biased entry/exit signals.                                                |
-| freqtrade_recursive_analysis | VolatilityRotationMRDelayedConfirmLongOnly | pass     | freqtrade_recursive_analysis completed without obvious bias/error markers.                                                          |
+| check                         | target                                     | status   | detail                                                                                                                              |
+|:------------------------------|:-------------------------------------------|:---------|:------------------------------------------------------------------------------------------------------------------------------------|
+| static_strategy_files_present | strategy_files                             | pass     | All expected strategy files are present.                                                                                            |
+| static_negative_shift         | strategy_files                             | pass     | No negative shift usage found.                                                                                                      |
+| static_whole_dataframe_stats  | strategy_files                             | pass     | No unconstrained whole-dataframe statistic usage found in strategy files.                                                           |
+| static_iloc_last              | strategy_files                             | info     | iloc[-1] appears only in live/analyzed-candle helper paths; not in indicator generation.                                            |
+| static_informative_merge      | strategy_files                             | pass     | merge_informative_pair is used for 1h informative data; Freqtrade shifts informative candles to avoid using unfinished HTF candles. |
+| static_rotation_ranking       | strategy_files                             | pass     | No groupby().transform() ranking pattern found in strategy files.                                                                   |
+| freqtrade_lookahead_analysis  | VolatilityRotationMRFlushReboundLongOnly   | pass     | lookahead-analysis completed with has_bias=False and zero biased entry/exit signals.                                                |
+| freqtrade_recursive_analysis  | VolatilityRotationMRFlushReboundLongOnly   | pass     | freqtrade_recursive_analysis completed without obvious bias/error markers.                                                          |
+| freqtrade_lookahead_analysis  | VolatilityRotationMRDelayedConfirmLongOnly | pass     | lookahead-analysis completed with has_bias=False and zero biased entry/exit signals.                                                |
+| freqtrade_recursive_analysis  | VolatilityRotationMRDelayedConfirmLongOnly | pass     | freqtrade_recursive_analysis completed without obvious bias/error markers.                                                          |
 
 ## Static Audit
 
-| check                        | status   | detail                                                                                                                              |
-|:-----------------------------|:---------|:------------------------------------------------------------------------------------------------------------------------------------|
-| static_negative_shift        | pass     | No negative shift usage found.                                                                                                      |
-| static_whole_dataframe_stats | pass     | No unconstrained .max/.min/.mean usage found in strategy files.                                                                     |
-| static_iloc_last             | info     | iloc[-1] appears only in live/analyzed-candle helper paths; not in indicator generation.                                            |
-| static_informative_merge     | pass     | merge_informative_pair is used for 1h informative data; Freqtrade shifts informative candles to avoid using unfinished HTF candles. |
-| static_rotation_ranking      | pass     | No groupby().transform() ranking pattern found in strategy files.                                                                   |
+| check                         | status   | detail                                                                                                                              |
+|:------------------------------|:---------|:------------------------------------------------------------------------------------------------------------------------------------|
+| static_strategy_files_present | pass     | All expected strategy files are present.                                                                                            |
+| static_negative_shift         | pass     | No negative shift usage found.                                                                                                      |
+| static_whole_dataframe_stats  | pass     | No unconstrained whole-dataframe statistic usage found in strategy files.                                                           |
+| static_iloc_last              | info     | iloc[-1] appears only in live/analyzed-candle helper paths; not in indicator generation.                                            |
+| static_informative_merge      | pass     | merge_informative_pair is used for 1h informative data; Freqtrade shifts informative candles to avoid using unfinished HTF candles. |
+| static_rotation_ranking       | pass     | No groupby().transform() ranking pattern found in strategy files.                                                                   |
 
 ## Freqtrade Command Logs
 
