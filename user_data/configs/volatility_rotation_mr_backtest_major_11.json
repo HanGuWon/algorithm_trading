@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.freqtrade.io/schema.json",
+  "add_config_files": [
+    "volatility_rotation_mr_base.json",
+    "../pairs/binance_usdt_futures_major_11.json"
+  ],
+  "dry_run": true,
+  "db_url": "sqlite:///user_data/tradesv3_volatility_rotation_mr_backtest_major_11.sqlite",
+  "exchange": {
+    "key": "",
+    "secret": "",
+    "password": "",
+    "ccxt_config": {
+      "options": {
+        "defaultType": "swap",
+        "fetchMarkets": {
+          "types": [
+            "linear"
+          ]
+        }
+      }
+    },
+    "ccxt_async_config": {
+      "options": {
+        "defaultType": "swap",
+        "fetchMarkets": {
+          "types": [
+            "linear"
+          ]
+        }
+      }
+    }
+  },
+  "pairlists": [
+    {
+      "method": "StaticPairList"
+    }
+  ]
+}
