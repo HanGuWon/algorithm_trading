@@ -245,6 +245,37 @@ Result:
 - `No-go / Park` for full long/short
 - `No-go / Park` for the frozen long-only candidate in its current form
 
+## Major-11 External Review Follow-Up
+
+The major-coin Binance USDT-M archive pass is a research diagnostic, not deployment evidence.
+
+Primary files:
+
+- external review request: `docs/validation/major_11_external_review_request.md`
+- external review response: `docs/validation/major_11_external_review_response.md`
+- major-11 backtest summary: `docs/validation/analysis/major_11_backtest_summary.md`
+- concentration diagnostics: `docs/validation/analysis/major_11_concentration_diagnostics.md`
+- diagnostics runner: `scripts/run_major_11_diagnostics.py`
+
+Current interpretation:
+
+- `VolatilityRotationMRFlushReboundLongOnly` is `REDESIGN_RESEARCH_ONLY`, not promotable.
+- `VolatilityRotationMRDelayedConfirmLongOnly` remains `PARK`.
+- The flush candidate produced only 19 trades over the available major-11 futures history.
+- Removing the top 5 profitable flush trades flips the remaining result negative.
+- SOL alone contributes more than half of the net flush profit.
+
+Regenerate the latest major-11 concentration report after a backtest:
+
+```bash
+python scripts/run_major_11_diagnostics.py \
+  --summary-csv docs/validation/analysis/major_11_backtest_summary.csv \
+  --backtest-root user_data/backtest_results/major_11 \
+  --datadir user_data/data/binance \
+  --output-md docs/validation/analysis/major_11_concentration_diagnostics.md \
+  --output-csv docs/validation/analysis/major_11_concentration_diagnostics.csv
+```
+
 ## Research-Safe 2024 PTI Backtesting Mode
 
 This is the primary alpha-validation path for the repository.

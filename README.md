@@ -53,9 +53,12 @@ Current implementation follow-up:
 - `VolatilityRotationMRDelayedConfirmLongOnly`
 - `scripts/run_strict_validation.py`
 - `scripts/run_cloud_strict_validation.sh`
+- `scripts/run_major_11_diagnostics.py`
 - `.github/workflows/strict-validation.yml`
 - `docs/validation/strict_gate_spec.md`
 - `docs/validation/cloud_strict_validation_runbook.md`
+- `docs/validation/major_11_external_review_response.md`
+- `docs/validation/analysis/major_11_concentration_diagnostics.md`
 - `docker-compose.yml`
 - `docs/deployment/docker_vm_free_tier.md`
 
