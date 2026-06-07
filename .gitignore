@@ -66,6 +66,8 @@ docs/validation/analysis/*
 !docs/validation/analysis/major_11_flush_baseline_candidate_summary.csv
 !docs/validation/analysis/major_11_flush_rebound_component_diagnostics.md
 !docs/validation/analysis/major_11_flush_rebound_component_diagnostics.csv
+!docs/validation/analysis/major_11_flush_candidate_simplification_recommendations.md
+!docs/validation/analysis/major_11_flush_candidate_simplification_recommendations.csv
 
 user_data/configs/volatility_rotation_mr_private.json
 user_data/configs/volatility_rotation_mr_private.*.json
