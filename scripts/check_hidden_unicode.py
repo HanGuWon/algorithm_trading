@@ -5,22 +5,22 @@ from pathlib import Path
 
 
 BIDI_CODEPOINTS = {
-    "\u202a",
-    "\u202b",
-    "\u202c",
-    "\u202d",
-    "\u202e",
-    "\u2066",
-    "\u2067",
-    "\u2068",
-    "\u2069",
+    0x202A,
+    0x202B,
+    0x202C,
+    0x202D,
+    0x202E,
+    0x2066,
+    0x2067,
+    0x2068,
+    0x2069,
 }
 
 INVISIBLE_CODEPOINTS = {
-    "\u200b",
-    "\u200c",
-    "\u200d",
-    "\ufeff",
+    0x200B,
+    0x200C,
+    0x200D,
+    0xFEFF,
 }
 
 DEFAULT_TEXT_SUFFIXES = {
@@ -70,7 +70,8 @@ def main() -> None:
     for path in iter_text_files(root, suffixes):
         text = path.read_text(encoding="utf-8", errors="ignore")
         for index, char in enumerate(text):
-            if char in BIDI_CODEPOINTS or char in INVISIBLE_CODEPOINTS:
+            codepoint = ord(char)
+            if codepoint in BIDI_CODEPOINTS or codepoint in INVISIBLE_CODEPOINTS:
                 bad.append((path.as_posix(), index, f"U+{ord(char):04X}"))
 
     if bad:

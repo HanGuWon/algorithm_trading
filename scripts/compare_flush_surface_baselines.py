@@ -64,6 +64,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-candidates", type=int, default=0, help="Optional smoke-test limit. Zero evaluates the full manifest.")
     parser.add_argument("--output-csv", default="docs/validation/analysis/major_11_flush_baseline_comparison.csv")
     parser.add_argument("--output-md", default="docs/validation/analysis/major_11_flush_baseline_comparison.md")
+    parser.add_argument(
+        "--candidate-summary-csv",
+        default="docs/validation/analysis/major_11_flush_baseline_candidate_summary.csv",
+    )
+    parser.add_argument(
+        "--candidate-summary-md",
+        default="docs/validation/analysis/major_11_flush_baseline_candidate_summary.md",
+    )
     return parser.parse_args()
 
 
@@ -314,6 +322,23 @@ def bootstrap_delta_median_ci(
     return float(np.quantile(deltas, alpha / 2)), float(np.quantile(deltas, 1 - alpha / 2))
 
 
+def validation_cluster_values(
+    clusters: pd.DataFrame,
+    validation_start: pd.Timestamp,
+    column: str = "excess_forward_72h",
+) -> pd.Series:
+    if clusters.empty or column not in clusters:
+        return pd.Series(dtype=float)
+    if "signal_timestamp" in clusters:
+        ts_col = "signal_timestamp"
+    elif "entry_timestamp" in clusters:
+        ts_col = "entry_timestamp"
+    else:
+        ts_col = "timestamp"
+    timestamps = pd.to_datetime(clusters[ts_col], utc=True)
+    return pd.to_numeric(clusters.loc[timestamps >= validation_start, column], errors="coerce")
+
+
 def median(frame: pd.DataFrame, column: str) -> float:
     if frame.empty or column not in frame:
         return float("nan")
@@ -387,7 +412,7 @@ def classify_baseline_comparison(row: dict[str, Any]) -> str:
         "delta_cluster_excess_72h_median",
         "delta_validation_excess_72h_median",
     ]
-    if any(pd.isna(row[key]) for key in required):
+    if any(pd.isna(row.get(key)) for key in required):
         return "BASELINE_UNDERPERFORMER"
 
     beats_24h = row["delta_cluster_excess_24h_median"] > 0
@@ -398,8 +423,13 @@ def classify_baseline_comparison(row: dict[str, Any]) -> str:
         and row["candidate_positive_years_72h"] >= row["baseline_positive_years_72h"] - 1
     )
 
+    ci_positive_72h = row.get("delta_cluster_excess_72h_median_ci_low", float("nan")) > 0
+
+    if beats_24h and beats_72h and beats_validation and no_worse_breadth and ci_positive_72h:
+        return "BASELINE_BEATER_CI"
+
     if beats_24h and beats_72h and beats_validation and no_worse_breadth:
-        return "BASELINE_BEATER"
+        return "BASELINE_BEATER_POINT"
 
     if (
         abs(row["delta_cluster_excess_72h_median"]) <= 0.0025
@@ -417,6 +447,7 @@ def comparison_row(
     baseline_metrics: dict[str, Any],
     candidate_clusters: pd.DataFrame,
     baseline_clusters: pd.DataFrame,
+    validation_start: pd.Timestamp,
     bootstrap_samples: int,
     random_seed: int,
 ) -> dict[str, Any]:
@@ -425,6 +456,12 @@ def comparison_row(
         baseline_clusters["excess_forward_72h"] if "excess_forward_72h" in baseline_clusters else pd.Series(dtype=float),
         n_boot=bootstrap_samples,
         seed=stable_seed(f"{candidate['candidate_id']}|{baseline.name}", random_seed),
+    )
+    validation_delta_ci_low, validation_delta_ci_high = bootstrap_delta_median_ci(
+        validation_cluster_values(candidate_clusters, validation_start),
+        validation_cluster_values(baseline_clusters, validation_start),
+        n_boot=bootstrap_samples,
+        seed=stable_seed(f"{candidate['candidate_id']}|{baseline.name}|validation", random_seed),
     )
     row: dict[str, Any] = {
         "candidate_id": candidate["candidate_id"],
@@ -465,6 +502,8 @@ def comparison_row(
         "baseline_cluster_excess_72h_median_ci_high": baseline_metrics["cluster_excess_72h_median_ci_high"],
         "delta_cluster_excess_72h_median_ci_low": delta_ci_low,
         "delta_cluster_excess_72h_median_ci_high": delta_ci_high,
+        "delta_validation_excess_72h_median_ci_low": validation_delta_ci_low,
+        "delta_validation_excess_72h_median_ci_high": validation_delta_ci_high,
     }
     row["delta_cluster_excess_24h_median"] = comparable_delta(
         candidate_metrics, baseline_metrics, "cluster_excess_24h_median"
@@ -538,12 +577,91 @@ def run_comparisons(
                     baseline_metrics,
                     candidate_clusters,
                     baseline_clusters,
+                    validation_start,
                     bootstrap_samples,
                     random_seed,
                 )
             )
 
     return pd.DataFrame(rows), pd.DataFrame(candidate_summary_rows)
+
+
+def is_beater_decision(values: pd.Series) -> pd.Series:
+    return values.isin(["BASELINE_BEATER_CI", "BASELINE_BEATER_POINT"])
+
+
+def baseline_family_mask(group: pd.DataFrame, family: str) -> pd.Series:
+    names = group["baseline_name"].astype(str)
+    if family == "rsi_plus_bollinger":
+        return names.str.startswith("rsi_") & names.str.endswith("_plus_bollinger")
+    if family == "rsi_only":
+        return names.str.startswith("rsi_only_")
+    if family == "price_z_plus_rsi":
+        return names.str.contains("_plus_rsi_", regex=False)
+    if family == "price_z_plus_bb":
+        return names.str.contains("_plus_bb", regex=False)
+    raise ValueError(f"Unsupported baseline family: {family}")
+
+
+def classify_candidate_vs_baselines(group: pd.DataFrame) -> str:
+    eligible = group[~group["decision"].astype(str).str.startswith("INSUFFICIENT")]
+    if len(eligible) < 3:
+        return "INSUFFICIENT_BASELINE_COVERAGE"
+
+    ci_wins = int((eligible["decision"] == "BASELINE_BEATER_CI").sum())
+    point_wins = int((eligible["decision"] == "BASELINE_BEATER_POINT").sum())
+    under = int((eligible["decision"] == "BASELINE_UNDERPERFORMER").sum())
+
+    if ci_wins >= 2 and under == 0:
+        return "SURVIVES_BASELINES_STRONG"
+    if ci_wins + point_wins >= 3 and under <= 1:
+        return "SURVIVES_BASELINES_WEAK"
+    if int((eligible["decision"] == "BASELINE_EQUIVALENT").sum()) >= max(2, len(eligible) // 2):
+        return "BASELINE_EQUIVALENT"
+    return "FAILS_BASELINES"
+
+
+def build_candidate_baseline_summary(comparisons: pd.DataFrame, candidate_summary: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for candidate_id, group in comparisons.groupby("candidate_id", sort=True):
+        eligible = group[~group["decision"].astype(str).str.startswith("INSUFFICIENT")]
+        row: dict[str, Any] = {
+            "candidate_id": candidate_id,
+            "eligible_baselines": int(len(eligible)),
+            "baseline_beater_ci_count": int((group["decision"] == "BASELINE_BEATER_CI").sum()),
+            "baseline_beater_point_count": int((group["decision"] == "BASELINE_BEATER_POINT").sum()),
+            "baseline_equivalent_count": int((group["decision"] == "BASELINE_EQUIVALENT").sum()),
+            "baseline_underperformer_count": int((group["decision"] == "BASELINE_UNDERPERFORMER").sum()),
+            "insufficient_baseline_count": int(group["decision"].astype(str).str.startswith("INSUFFICIENT").sum()),
+            "candidate_baseline_decision": classify_candidate_vs_baselines(group),
+        }
+        for family in ("rsi_plus_bollinger", "rsi_only", "price_z_plus_rsi", "price_z_plus_bb"):
+            family_rows = group[baseline_family_mask(group, family)]
+            row[f"beats_{family}"] = bool(not family_rows.empty and is_beater_decision(family_rows["decision"]).any())
+        row["worst_delta_cluster_excess_72h_median"] = (
+            float(eligible["delta_cluster_excess_72h_median"].min()) if not eligible.empty else float("nan")
+        )
+        row["worst_delta_validation_excess_72h_median"] = (
+            float(eligible["delta_validation_excess_72h_median"].min()) if not eligible.empty else float("nan")
+        )
+        rows.append(row)
+
+    summary = pd.DataFrame(rows)
+    if summary.empty:
+        return summary
+    return (
+        summary.merge(candidate_summary, on="candidate_id", how="left")
+        .sort_values(
+            [
+                "candidate_baseline_decision",
+                "baseline_beater_ci_count",
+                "baseline_beater_point_count",
+                "cluster_excess_72h_median",
+            ],
+            ascending=[True, False, False, False],
+        )
+        .reset_index(drop=True)
+    )
 
 
 def table(frame: pd.DataFrame) -> str:
@@ -555,6 +673,7 @@ def table(frame: pd.DataFrame) -> str:
 def markdown_report(
     comparisons: pd.DataFrame,
     candidate_summary: pd.DataFrame,
+    candidate_baseline_summary: pd.DataFrame,
     manifest: pd.DataFrame,
     event_count: int,
     args: argparse.Namespace,
@@ -568,13 +687,14 @@ def markdown_report(
     summary_by_candidate = (
         comparisons.groupby("candidate_id", as_index=False)
         .agg(
-            baseline_beaters=("decision", lambda values: int((values == "BASELINE_BEATER").sum())),
+            baseline_beater_ci=("decision", lambda values: int((values == "BASELINE_BEATER_CI").sum())),
+            baseline_beater_point=("decision", lambda values: int((values == "BASELINE_BEATER_POINT").sum())),
             baseline_equivalents=("decision", lambda values: int((values == "BASELINE_EQUIVALENT").sum())),
             baseline_underperformers=("decision", lambda values: int((values == "BASELINE_UNDERPERFORMER").sum())),
             insufficient_samples=("decision", lambda values: int(values.astype(str).str.startswith("INSUFFICIENT").sum())),
         )
         .merge(candidate_summary, on="candidate_id", how="left")
-        .sort_values(["baseline_beaters", "cluster_excess_72h_median"], ascending=[False, False])
+        .sort_values(["baseline_beater_ci", "baseline_beater_point", "cluster_excess_72h_median"], ascending=[False, False, False])
     )
     display_columns = [
         "candidate_id",
@@ -587,13 +707,18 @@ def markdown_report(
         "delta_validation_excess_72h_median",
         "delta_cluster_excess_72h_median_ci_low",
         "delta_cluster_excess_72h_median_ci_high",
+        "delta_validation_excess_72h_median_ci_low",
+        "delta_validation_excess_72h_median_ci_high",
         "candidate_positive_pairs_72h",
         "baseline_positive_pairs_72h",
         "candidate_positive_years_72h",
         "baseline_positive_years_72h",
         "cell_id",
     ]
-    beater_rows = comparisons[comparisons["decision"] == "BASELINE_BEATER"].sort_values(
+    ci_beater_rows = comparisons[comparisons["decision"] == "BASELINE_BEATER_CI"].sort_values(
+        ["delta_validation_excess_72h_median", "delta_cluster_excess_72h_median"], ascending=[False, False]
+    )
+    point_beater_rows = comparisons[comparisons["decision"] == "BASELINE_BEATER_POINT"].sort_values(
         ["delta_validation_excess_72h_median", "delta_cluster_excess_72h_median"], ascending=[False, False]
     )
     equivalent_rows = comparisons[comparisons["decision"] == "BASELINE_EQUIVALENT"].sort_values(
@@ -651,9 +776,17 @@ def markdown_report(
         "",
         table(summary_by_candidate.head(40)),
         "",
-        "## Baseline Beater Rows",
+        "## Candidate-Level Baseline Decisions",
         "",
-        table(beater_rows[display_columns].head(40)),
+        table(candidate_baseline_summary.head(40)),
+        "",
+        "## CI Baseline Beater Rows",
+        "",
+        table(ci_beater_rows[display_columns].head(40)),
+        "",
+        "## Point Baseline Beater Rows",
+        "",
+        table(point_beater_rows[display_columns].head(40)),
         "",
         "## Baseline Equivalent Rows",
         "",
@@ -669,7 +802,8 @@ def markdown_report(
         "",
         "## Interpretation",
         "",
-        "- `BASELINE_BEATER` means the robust candidate beats the anchored simple baseline at 24h cluster excess, 72h cluster excess, validation 72h excess, and is not materially worse on breadth.",
+        "- `BASELINE_BEATER_CI` means the robust candidate is a point-estimate beater and the overall 72h cluster-excess delta bootstrap CI lower bound is positive.",
+        "- `BASELINE_BEATER_POINT` means the robust candidate beats the anchored simple baseline on point estimates but does not clear the 72h delta CI gate.",
         "- `BASELINE_EQUIVALENT` means the candidate is within 25 bps of the baseline on both 72h cluster excess and validation excess.",
         "- `BASELINE_UNDERPERFORMER` means the added surface filters do not justify their complexity against that baseline.",
         "- `INSUFFICIENT_BASELINE_SAMPLE` means the simple baseline did not reach 200 independent 72h clusters.",
@@ -680,6 +814,67 @@ def markdown_report(
         "- If robust candidates beat simple baselines across cluster, validation, breadth, and null-excess metrics, proceed to flush-vs-rebound diagnostics.",
         "- If robust candidates are mostly equivalent to simple baselines, keep the simpler baseline as the research object.",
         "- If robust candidates mostly underperform simple baselines, retire the current flush-surface architecture rather than redesigning a live strategy.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def candidate_summary_markdown(candidate_baseline_summary: pd.DataFrame, args: argparse.Namespace) -> str:
+    decision_counts = (
+        candidate_baseline_summary["candidate_baseline_decision"]
+        .value_counts()
+        .rename_axis("candidate_baseline_decision")
+        .reset_index(name="candidates")
+        if not candidate_baseline_summary.empty
+        else pd.DataFrame()
+    )
+    columns = [
+        "candidate_id",
+        "candidate_baseline_decision",
+        "eligible_baselines",
+        "baseline_beater_ci_count",
+        "baseline_beater_point_count",
+        "baseline_equivalent_count",
+        "baseline_underperformer_count",
+        "insufficient_baseline_count",
+        "beats_rsi_plus_bollinger",
+        "beats_rsi_only",
+        "beats_price_z_plus_rsi",
+        "beats_price_z_plus_bb",
+        "worst_delta_cluster_excess_72h_median",
+        "worst_delta_validation_excess_72h_median",
+        "signals",
+        "independent_clusters_72h",
+        "cluster_excess_72h_median",
+        "validation_excess_72h_median",
+        "selection_buckets",
+    ]
+    lines = [
+        "# Major 11 Flush Baseline Candidate Summary",
+        "",
+        "> Candidate-level rollup for baseline comparison. This summarizes row-level baseline decisions so isolated wins are not overinterpreted.",
+        "",
+        "## Scope",
+        "",
+        f"- Source comparison CSV: `{args.output_csv}`",
+        f"- Candidate manifest: `{args.candidate_manifest}`",
+        f"- Output CSV: `{args.candidate_summary_csv}`",
+        "",
+        "## Decision Counts",
+        "",
+        table(decision_counts),
+        "",
+        "## Candidate Decisions",
+        "",
+        table(candidate_baseline_summary[columns].head(80) if not candidate_baseline_summary.empty else candidate_baseline_summary),
+        "",
+        "## Interpretation",
+        "",
+        "- `SURVIVES_BASELINES_STRONG` requires at least two CI-aware baseline wins and no eligible underperformer rows.",
+        "- `SURVIVES_BASELINES_WEAK` requires at least three CI-aware or point-estimate wins and at most one eligible underperformer row.",
+        "- `BASELINE_EQUIVALENT` means equivalent rows dominate the eligible baseline comparisons.",
+        "- `FAILS_BASELINES` means the candidate does not survive the eligible baseline comparison set.",
+        "- `INSUFFICIENT_BASELINE_COVERAGE` means fewer than three eligible baselines reached the required sample size.",
         "",
     ]
     return "\n".join(lines)
@@ -714,17 +909,28 @@ def main() -> None:
         args.bootstrap_samples,
         args.random_seed,
     )
+    candidate_baseline_summary = build_candidate_baseline_summary(comparisons, candidate_summary)
 
     output_csv = Path(args.output_csv)
     output_md = Path(args.output_md)
+    candidate_summary_csv = Path(args.candidate_summary_csv)
+    candidate_summary_md = Path(args.candidate_summary_md)
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     output_md.parent.mkdir(parents=True, exist_ok=True)
+    candidate_summary_csv.parent.mkdir(parents=True, exist_ok=True)
+    candidate_summary_md.parent.mkdir(parents=True, exist_ok=True)
     comparisons.to_csv(output_csv, index=False, float_format="%.6g")
-    output_md.write_text(markdown_report(comparisons, candidate_summary, manifest, len(events), args), encoding="utf-8")
+    candidate_baseline_summary.to_csv(candidate_summary_csv, index=False, float_format="%.6g")
+    output_md.write_text(
+        markdown_report(comparisons, candidate_summary, candidate_baseline_summary, manifest, len(events), args),
+        encoding="utf-8",
+    )
+    candidate_summary_md.write_text(candidate_summary_markdown(candidate_baseline_summary, args), encoding="utf-8")
     print(f"Event universe: {len(events)}")
     print(f"Candidates evaluated: {len(manifest)}")
     print(f"Baseline comparisons: {len(comparisons)}")
     print(f"Baseline comparison written to {output_md}")
+    print(f"Candidate baseline summary written to {candidate_summary_md}")
 
 
 if __name__ == "__main__":
