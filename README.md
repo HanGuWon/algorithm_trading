@@ -68,6 +68,10 @@ Current implementation follow-up:
 - `docker-compose.yml`
 - `docs/deployment/docker_vm_free_tier.md`
 
+The major-11 flush threshold surface is a research-only diagnostic. It now reports
+unique signal-set counts, duplicate grid masks, cluster-first matched-null excess,
+and train/validation split checks before labeling robust research candidates.
+
 These additions are research/deployment infrastructure only. They do not promote any strategy to
 live use.
 
