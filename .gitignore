@@ -58,6 +58,14 @@ docs/validation/analysis/*
 !docs/validation/analysis/major_11_flush_rebound_event_study.csv
 !docs/validation/analysis/major_11_flush_threshold_surface.md
 !docs/validation/analysis/major_11_flush_threshold_surface.csv
+!docs/validation/analysis/major_11_robust_flush_candidate_manifest.md
+!docs/validation/analysis/major_11_robust_flush_candidate_manifest.csv
+!docs/validation/analysis/major_11_flush_baseline_comparison.md
+!docs/validation/analysis/major_11_flush_baseline_comparison.csv
+!docs/validation/analysis/major_11_flush_baseline_candidate_summary.md
+!docs/validation/analysis/major_11_flush_baseline_candidate_summary.csv
+!docs/validation/analysis/major_11_flush_rebound_component_diagnostics.md
+!docs/validation/analysis/major_11_flush_rebound_component_diagnostics.csv
 
 user_data/configs/volatility_rotation_mr_private.json
 user_data/configs/volatility_rotation_mr_private.*.json
