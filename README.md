@@ -60,6 +60,7 @@ Current implementation follow-up:
 - `scripts/select_robust_flush_candidates.py`
 - `scripts/compare_flush_surface_baselines.py`
 - `scripts/diagnose_flush_rebound_components.py`
+- `scripts/recommend_flush_candidate_simplifications.py`
 - `scripts/check_hidden_unicode.py`
 - `.github/workflows/strict-validation.yml`
 - `docs/validation/strict_gate_spec.md`
@@ -73,6 +74,7 @@ Current implementation follow-up:
 - `docs/validation/analysis/major_11_flush_baseline_comparison.md`
 - `docs/validation/analysis/major_11_flush_baseline_candidate_summary.md`
 - `docs/validation/analysis/major_11_flush_rebound_component_diagnostics.md`
+- `docs/validation/analysis/major_11_flush_candidate_simplification_recommendations.md`
 - `docker-compose.yml`
 - `docs/deployment/docker_vm_free_tier.md`
 
@@ -90,6 +92,11 @@ strategy promotion gate by itself.
 The major-11 flush/rebound component diagnostic then uses only the baseline-surviving
 candidate set and fixed component definitions to distinguish immediate flush value,
 filter ablation value, and short rebound-confirmation value. It is also research-only.
+
+The major-11 flush simplification recommendation report reads the baseline-surviving
+candidate summary and component diagnostic artifacts, then ranks fixed-scope next
+steps such as keeping the original immediate flush or testing a breakout-block
+removal candidate. It does not run a new grid search or create a deployable strategy.
 
 These additions are research/deployment infrastructure only. They do not promote any strategy to
 live use.
