@@ -61,6 +61,7 @@ Current implementation follow-up:
 - `scripts/compare_flush_surface_baselines.py`
 - `scripts/diagnose_flush_rebound_components.py`
 - `scripts/recommend_flush_candidate_simplifications.py`
+- `scripts/report_flush_fixed_candidate_set.py`
 - `scripts/check_hidden_unicode.py`
 - `.github/workflows/strict-validation.yml`
 - `docs/validation/strict_gate_spec.md`
@@ -75,6 +76,7 @@ Current implementation follow-up:
 - `docs/validation/analysis/major_11_flush_baseline_candidate_summary.md`
 - `docs/validation/analysis/major_11_flush_rebound_component_diagnostics.md`
 - `docs/validation/analysis/major_11_flush_candidate_simplification_recommendations.md`
+- `docs/validation/analysis/major_11_flush_fixed_candidate_set.md`
 - `docker-compose.yml`
 - `docs/deployment/docker_vm_free_tier.md`
 
@@ -97,6 +99,11 @@ The major-11 flush simplification recommendation report reads the baseline-survi
 candidate summary and component diagnostic artifacts, then ranks fixed-scope next
 steps such as keeping the original immediate flush or testing a breakout-block
 removal candidate. It does not run a new grid search or create a deployable strategy.
+
+The major-11 fixed candidate set report then evaluates only the retained original
+immediate-flush candidates and recommended fixed simplifications. It includes
+matched-null event-study metrics, validation-period behavior, top-removal
+concentration stress, and round-trip cost stress without widening the search space.
 
 These additions are research/deployment infrastructure only. They do not promote any strategy to
 live use.

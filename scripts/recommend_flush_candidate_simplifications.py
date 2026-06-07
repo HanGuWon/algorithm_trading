@@ -314,8 +314,8 @@ def main() -> None:
     output_md = Path(args.output_md)
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     output_md.parent.mkdir(parents=True, exist_ok=True)
-    recommendations.to_csv(output_csv, index=False)
-    output_md.write_text(markdown_report(recommendations, args), encoding="utf-8")
+    recommendations.to_csv(output_csv, index=False, lineterminator="\n")
+    output_md.write_text(markdown_report(recommendations, args), encoding="utf-8", newline="\n")
 
     counts = recommendations["recommended_next_step"].value_counts().to_dict() if not recommendations.empty else {}
     print(f"Wrote {len(recommendations)} recommendations to {output_csv}")
