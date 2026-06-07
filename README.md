@@ -57,6 +57,12 @@ Current implementation follow-up:
 - `scripts/run_major_11_bias_audit.py`
 - `scripts/event_study_flush_rebound.py`
 - `scripts/scan_flush_threshold_surface.py`
+- `scripts/select_robust_flush_candidates.py`
+- `scripts/compare_flush_surface_baselines.py`
+- `scripts/diagnose_flush_rebound_components.py`
+- `scripts/recommend_flush_candidate_simplifications.py`
+- `scripts/report_flush_fixed_candidate_set.py`
+- `scripts/check_hidden_unicode.py`
 - `.github/workflows/strict-validation.yml`
 - `docs/validation/strict_gate_spec.md`
 - `docs/validation/cloud_strict_validation_runbook.md`
@@ -65,12 +71,39 @@ Current implementation follow-up:
 - `docs/validation/analysis/major_11_bias_audit.md`
 - `docs/validation/analysis/major_11_flush_rebound_event_study.md`
 - `docs/validation/analysis/major_11_flush_threshold_surface.md`
+- `docs/validation/analysis/major_11_robust_flush_candidate_manifest.md`
+- `docs/validation/analysis/major_11_flush_baseline_comparison.md`
+- `docs/validation/analysis/major_11_flush_baseline_candidate_summary.md`
+- `docs/validation/analysis/major_11_flush_rebound_component_diagnostics.md`
+- `docs/validation/analysis/major_11_flush_candidate_simplification_recommendations.md`
+- `docs/validation/analysis/major_11_flush_fixed_candidate_set.md`
 - `docker-compose.yml`
 - `docs/deployment/docker_vm_free_tier.md`
 
 The major-11 flush threshold surface is a research-only diagnostic. It now reports
 unique signal-set counts, duplicate grid masks, cluster-first matched-null excess,
 and train/validation split checks before labeling robust research candidates.
+
+The major-11 flush baseline comparison is also research-only. It freezes a robust
+candidate manifest first, then compares those candidates against simpler oversold
+definitions under the same next-open, cluster-first, matched-null, and
+train/validation framework. The candidate summary separates CI-aware baseline
+wins from point-estimate-only wins before any follow-up diagnostics. It is not a
+strategy promotion gate by itself.
+
+The major-11 flush/rebound component diagnostic then uses only the baseline-surviving
+candidate set and fixed component definitions to distinguish immediate flush value,
+filter ablation value, and short rebound-confirmation value. It is also research-only.
+
+The major-11 flush simplification recommendation report reads the baseline-surviving
+candidate summary and component diagnostic artifacts, then ranks fixed-scope next
+steps such as keeping the original immediate flush or testing a breakout-block
+removal candidate. It does not run a new grid search or create a deployable strategy.
+
+The major-11 fixed candidate set report then evaluates only the retained original
+immediate-flush candidates and recommended fixed simplifications. It includes
+matched-null event-study metrics, validation-period behavior, top-removal
+concentration stress, and round-trip cost stress without widening the search space.
 
 These additions are research/deployment infrastructure only. They do not promote any strategy to
 live use.
