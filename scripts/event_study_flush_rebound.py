@@ -54,6 +54,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cluster-horizon", default="72h")
     parser.add_argument("--null-samples-per-event", type=int, default=100)
     parser.add_argument("--null-match", default="pair,year,vol_bucket")
+    parser.add_argument("--null-exclude-horizon", default="72h")
+    parser.add_argument("--null-exclude-same-timestamp", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--random-seed", type=int, default=42)
     parser.add_argument("--output-md", default="docs/validation/analysis/major_11_flush_rebound_event_study.md")
     parser.add_argument("--output-csv", default="docs/validation/analysis/major_11_flush_rebound_event_study.csv")
@@ -300,7 +302,19 @@ def build_null_pool(prepared_frames: dict[str, pd.DataFrame], entry_price_mode: 
             pool[f"forward_{label}"] = (target / pool["entry_price"]) - 1.0
             pool[f"has_forward_{label}"] = valid_entry & target.notna()
         pool = pool[valid_entry & pool["has_forward_72h"]].copy()
-        rows.append(pool[["pair", "year", "month", "quarter", "vol_bucket", *[f"forward_{label}" for label in FORWARD_CANDLES]]])
+        rows.append(
+            pool[
+                [
+                    "pair",
+                    "date",
+                    "year",
+                    "month",
+                    "quarter",
+                    "vol_bucket",
+                    *[f"forward_{label}" for label in FORWARD_CANDLES],
+                ]
+            ]
+        )
     return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
 
 
@@ -318,6 +332,8 @@ def attach_matched_null_controls(
     match_fields: tuple[str, ...],
     samples_per_event: int,
     random_seed: int,
+    exclude_horizon: str | None = "72h",
+    exclude_same_timestamp: bool = True,
 ) -> pd.DataFrame:
     events = events.copy()
     for label in ("24h", "72h"):
@@ -336,22 +352,80 @@ def attach_matched_null_controls(
     grouped = clean_pool.groupby(list(match_fields), dropna=False).indices
     forward_24h = clean_pool["forward_24h"].to_numpy(dtype=float)
     forward_72h = clean_pool["forward_72h"].to_numpy(dtype=float)
+    pool_dates = pd.to_datetime(clean_pool["date"], utc=True).to_numpy(dtype="datetime64[ns]") if "date" in clean_pool else None
+    pool_pairs = clean_pool["pair"].astype(str).to_numpy() if "pair" in clean_pool else None
+    gap = pd.Timedelta(exclude_horizon) if exclude_horizon else pd.Timedelta(0)
+    use_time_exclusion = pool_dates is not None and (exclude_same_timestamp or gap > pd.Timedelta(0))
 
     for key, event_indices in events.groupby(list(match_fields), dropna=False).groups.items():
         key = _lookup_key(key)
         candidate_indices = grouped.get(key)
         if candidate_indices is None or len(candidate_indices) == 0:
             continue
-        take = rng.choice(candidate_indices, size=(len(event_indices), samples_per_event), replace=True)
-        null_24h = np.nanmedian(forward_24h[take], axis=1)
-        null_72h = np.nanmedian(forward_72h[take], axis=1)
-        raw_24h = pd.to_numeric(events.loc[event_indices, "forward_24h"], errors="coerce").to_numpy(dtype=float)
-        raw_72h = pd.to_numeric(events.loc[event_indices, "forward_72h"], errors="coerce").to_numpy(dtype=float)
-        events.loc[event_indices, "null_sample_count"] = int(samples_per_event)
-        events.loc[event_indices, "null_forward_24h_median"] = null_24h
-        events.loc[event_indices, "null_forward_72h_median"] = null_72h
-        events.loc[event_indices, "excess_forward_24h"] = raw_24h - null_24h
-        events.loc[event_indices, "excess_forward_72h"] = raw_72h - null_72h
+        candidate_indices = np.asarray(candidate_indices, dtype=np.int64)
+
+        if not use_time_exclusion:
+            take = rng.choice(candidate_indices, size=(len(event_indices), samples_per_event), replace=True)
+            null_24h = np.nanmedian(forward_24h[take], axis=1)
+            null_72h = np.nanmedian(forward_72h[take], axis=1)
+            raw_24h = pd.to_numeric(events.loc[event_indices, "forward_24h"], errors="coerce").to_numpy(dtype=float)
+            raw_72h = pd.to_numeric(events.loc[event_indices, "forward_72h"], errors="coerce").to_numpy(dtype=float)
+            events.loc[event_indices, "null_sample_count"] = int(samples_per_event)
+            events.loc[event_indices, "null_forward_24h_median"] = null_24h
+            events.loc[event_indices, "null_forward_72h_median"] = null_72h
+            events.loc[event_indices, "excess_forward_24h"] = raw_24h - null_24h
+            events.loc[event_indices, "excess_forward_72h"] = raw_72h - null_72h
+            continue
+
+        same_pair_fast_path = "pair" in match_fields
+        if same_pair_fast_path:
+            order = np.argsort(pool_dates[candidate_indices])
+            sorted_indices = candidate_indices[order]
+            sorted_dates = pool_dates[sorted_indices]
+
+        event_index_array = np.asarray(list(event_indices))
+        event_frame = events.loc[event_index_array]
+        event_timestamps = pd.to_datetime(event_frame["signal_timestamp"], utc=True).dt.tz_localize(None).to_numpy(
+            dtype="datetime64[ns]"
+        )
+        raw_24h_values = pd.to_numeric(event_frame["forward_24h"], errors="coerce").to_numpy(dtype=float)
+        raw_72h_values = pd.to_numeric(event_frame["forward_72h"], errors="coerce").to_numpy(dtype=float)
+        event_pairs = event_frame["pair"].astype(str).to_numpy() if not same_pair_fast_path else None
+        null_24h_values = np.full(len(event_index_array), np.nan, dtype=float)
+        null_72h_values = np.full(len(event_index_array), np.nan, dtype=float)
+        sample_counts = np.zeros(len(event_index_array), dtype=int)
+
+        for offset, event_ts in enumerate(event_timestamps):
+            left_bound = event_ts - np.timedelta64(gap.value, "ns")
+            right_bound = event_ts + np.timedelta64(gap.value, "ns")
+
+            if same_pair_fast_path:
+                left = int(np.searchsorted(sorted_dates, left_bound, side="left"))
+                right = int(np.searchsorted(sorted_dates, right_bound, side="right"))
+                eligible_count = left + max(0, len(sorted_indices) - right)
+                if eligible_count <= 0:
+                    continue
+                draw_slots = rng.integers(0, eligible_count, size=samples_per_event)
+                take = np.where(draw_slots < left, sorted_indices[draw_slots], sorted_indices[right + (draw_slots - left)])
+            else:
+                event_pair = event_pairs[offset]
+                exclude_mask = (pool_pairs[candidate_indices] == event_pair) & (
+                    (pool_dates[candidate_indices] >= left_bound) & (pool_dates[candidate_indices] <= right_bound)
+                )
+                eligible = candidate_indices[~exclude_mask]
+                if len(eligible) == 0:
+                    continue
+                take = rng.choice(eligible, size=samples_per_event, replace=True)
+
+            null_24h_values[offset] = float(np.nanmedian(forward_24h[take]))
+            null_72h_values[offset] = float(np.nanmedian(forward_72h[take]))
+            sample_counts[offset] = int(samples_per_event)
+
+        events.loc[event_index_array, "null_sample_count"] = sample_counts
+        events.loc[event_index_array, "null_forward_24h_median"] = null_24h_values
+        events.loc[event_index_array, "null_forward_72h_median"] = null_72h_values
+        events.loc[event_index_array, "excess_forward_24h"] = raw_24h_values - null_24h_values
+        events.loc[event_index_array, "excess_forward_72h"] = raw_72h_values - null_72h_values
     return events
 
 
@@ -498,6 +572,8 @@ def markdown_report(events: pd.DataFrame, args: argparse.Namespace) -> str:
         f"- Cluster horizon: `{args.cluster_horizon}`",
         f"- Matched-null samples per event: `{args.null_samples_per_event}`",
         f"- Matched-null fields: `{args.null_match}`",
+        f"- Matched-null exclusion horizon: `{args.null_exclude_horizon}`",
+        f"- Matched-null same-timestamp exclusion: `{args.null_exclude_same_timestamp}`",
         f"- Forward horizons: `{', '.join(FORWARD_CANDLES.keys())}`",
         "",
         "## Strategy Summary",
@@ -549,6 +625,8 @@ def main() -> None:
             match_fields,
             args.null_samples_per_event,
             args.random_seed,
+            args.null_exclude_horizon,
+            args.null_exclude_same_timestamp,
         )
         frames.append(events)
 
