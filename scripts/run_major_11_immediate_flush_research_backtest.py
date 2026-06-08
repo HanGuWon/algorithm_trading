@@ -50,8 +50,8 @@ BREAKDOWN_COLUMNS = [
 ]
 
 ROW_METADATA_KEYS = [
-    "git_commit",
-    "git_worktree_dirty",
+    "input_git_commit",
+    "input_git_worktree_dirty",
     "manifest_sha256",
     "strategy_file_sha256",
     "config_sha256",
@@ -128,6 +128,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fee-scenarios", nargs="+", default=["base"], choices=list(FEE_SCENARIOS))
     parser.add_argument("--export-mode", default="trades", choices=["trades", "signals"])
     parser.add_argument("--plan-only", action="store_true")
+    parser.add_argument(
+        "--allow-dirty-execution",
+        action="store_true",
+        help="Allow real backtests from a dirty worktree. Ignored by --plan-only.",
+    )
     parser.add_argument("--skip-discovery", action="store_true")
     parser.add_argument("--max-runs", type=int, default=0, help="Optional smoke-test limit after matrix creation.")
     parser.add_argument("--validation-start", default="2024-01-01")
@@ -278,8 +283,8 @@ def build_metadata(args: argparse.Namespace, manifest: pd.DataFrame, matrix: pd.
     commit, dirty = git_commit()
     strategy_classes = sorted(matrix["strategy_class"].astype(str).unique())
     return {
-        "git_commit": commit,
-        "git_worktree_dirty": dirty,
+        "input_git_commit": commit,
+        "input_git_worktree_dirty": dirty,
         "manifest_sha256": sha256_file(Path(args.manifest)),
         "strategy_file_sha256": sha256_file(Path(args.strategy_file)),
         "config_sha256": sha256_file(Path(args.config)),
@@ -456,6 +461,8 @@ def classify(row: dict[str, Any], args: argparse.Namespace) -> str:
         return "VALIDATION_FAIL"
     if row["active_pairs"] < args.min_active_pairs or row["active_years"] < args.min_active_years:
         return "INSUFFICIENT_BREADTH"
+    if row["profit_after_top_5_trade_removal"] <= 0:
+        return "TOP_TRADE_CONCENTRATED"
     if row["profit_after_fee_2x"] <= 0 or row["profit_after_20bps_cost_proxy"] <= 0:
         return "COST_SENSITIVE"
     if (
@@ -804,8 +811,8 @@ def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Na
         f"- Manifest SHA256: `{metadata['manifest_sha256']}`",
         f"- Strategy file SHA256: `{metadata['strategy_file_sha256']}`",
         f"- Config SHA256: `{metadata['config_sha256']}`",
-        f"- Git commit: `{metadata['git_commit']}`",
-        f"- Git worktree dirty at run time: `{metadata['git_worktree_dirty']}`",
+        f"- Input git commit: `{metadata['input_git_commit']}`",
+        f"- Input git worktree dirty at run time: `{metadata['input_git_worktree_dirty']}`",
         f"- Freqtrade version: `{metadata['freqtrade_version']}`",
         f"- Discovery status: `{metadata.get('strategy_discovery_status', '')}`",
         "",
@@ -875,6 +882,12 @@ def main() -> None:
         write_outputs(planned, pd.DataFrame(), args, metadata)
         print(f"Wrote plan-only matrix to {args.output_md}")
         return
+
+    if metadata["input_git_worktree_dirty"] and not args.allow_dirty_execution:
+        raise SystemExit(
+            "Refusing to run real backtests from a dirty worktree. "
+            "Commit/stash changes first, or pass --allow-dirty-execution."
+        )
 
     rows: list[dict[str, Any]] = []
     trade_frames: list[pd.DataFrame] = []

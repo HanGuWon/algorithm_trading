@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -71,6 +72,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--strict-all", action="store_true", help="Audit all manifest x exit-mode strategy classes.")
     parser.add_argument("--plan-only", action="store_true")
     parser.add_argument("--write-placeholder-results", action="store_true")
+    parser.add_argument("--max-recursive-variance-pct", type=float, default=0.0)
     return parser.parse_args()
 
 
@@ -138,7 +140,6 @@ def command_for(args: argparse.Namespace, check_type: str, strategy_class: str, 
             "5m",
             "--timerange",
             args.timerange,
-            "--enable-protections",
             "--minimum-trade-amount",
             "1",
             "--targeted-trade-amount",
@@ -189,8 +190,109 @@ def write_placeholder(output_csv: Path, row: dict[str, Any]) -> None:
     pd.DataFrame([row]).to_csv(output_csv, index=False, lineterminator="\n")
 
 
+def has_insufficient_signal_marker(text: str) -> bool:
+    lowered = text.lower()
+    markers = ("not enough", "minimum", "too few", "no trades", "no signals", "no entries")
+    return any(marker in lowered for marker in markers)
+
+
+def truthy_series(series: pd.Series) -> pd.Series:
+    return series.fillna(False).astype(str).str.strip().str.lower().isin({"1", "true", "yes", "y"})
+
+
+def numeric_sum(frame: pd.DataFrame, column: str) -> float:
+    if column not in frame:
+        return 0.0
+    return float(pd.to_numeric(frame[column], errors="coerce").fillna(0.0).sum())
+
+
+def classify_lookahead_result(row: dict[str, Any], completed: subprocess.CompletedProcess[str], log_text: str) -> dict[str, Any]:
+    output_csv = Path(str(row["output_csv"]))
+    result = {
+        **row,
+        "exit_code": completed.returncode,
+        "has_bias": "",
+        "biased_entry_signals": "",
+        "biased_exit_signals": "",
+        "recursive_max_variance_pct": "",
+    }
+    if completed.returncode != 0:
+        status = "inconclusive_insufficient_signals" if has_insufficient_signal_marker(log_text) else "fail"
+        decision = "LOOKAHEAD_INCONCLUSIVE" if status.startswith("inconclusive") else "LOOKAHEAD_FAILED"
+        return {**result, "status": status, "decision": decision}
+    if not output_csv.exists():
+        return {**result, "status": "schema_fail", "decision": "LOOKAHEAD_EXPORT_MISSING"}
+
+    try:
+        frame = pd.read_csv(output_csv)
+    except (OSError, pd.errors.ParserError) as exc:
+        return {**result, "status": "schema_fail", "decision": f"LOOKAHEAD_EXPORT_PARSE_FAIL:{type(exc).__name__}"}
+
+    known_columns = {"has_bias", "biased_entry_signals", "biased_exit_signals"}
+    if not known_columns.intersection(frame.columns):
+        return {**result, "status": "schema_fail", "decision": "LOOKAHEAD_EXPORT_SCHEMA_FAIL"}
+
+    has_bias = bool(truthy_series(frame["has_bias"]).any()) if "has_bias" in frame else False
+    biased_entry = numeric_sum(frame, "biased_entry_signals")
+    biased_exit = numeric_sum(frame, "biased_exit_signals")
+    status = "fail" if has_bias or biased_entry > 0 or biased_exit > 0 else "pass"
+    decision = "LOOKAHEAD_BIAS_DETECTED" if status == "fail" else "LOOKAHEAD_CLEAN"
+    return {
+        **result,
+        "status": status,
+        "decision": decision,
+        "has_bias": has_bias,
+        "biased_entry_signals": biased_entry,
+        "biased_exit_signals": biased_exit,
+    }
+
+
+def recursive_variances(log_text: str) -> list[float]:
+    variances: list[float] = []
+    for line in log_text.splitlines():
+        lowered = line.lower()
+        if "variance" not in lowered and "var %" not in lowered and "variance %" not in lowered:
+            continue
+        for value in re.findall(r"[-+]?\d+(?:\.\d+)?", line):
+            variances.append(abs(float(value)))
+    return variances
+
+
+def classify_recursive_result(
+    args: argparse.Namespace,
+    row: dict[str, Any],
+    completed: subprocess.CompletedProcess[str],
+    log_text: str,
+) -> dict[str, Any]:
+    result = {
+        **row,
+        "exit_code": completed.returncode,
+        "has_bias": "",
+        "biased_entry_signals": "",
+        "biased_exit_signals": "",
+        "recursive_max_variance_pct": "",
+    }
+    if completed.returncode != 0:
+        status = "inconclusive_insufficient_signals" if has_insufficient_signal_marker(log_text) else "fail"
+        decision = "RECURSIVE_INCONCLUSIVE" if status.startswith("inconclusive") else "RECURSIVE_FAILED"
+        return {**result, "status": status, "decision": decision}
+
+    variances = recursive_variances(log_text)
+    if not variances:
+        return {**result, "status": "schema_fail", "decision": "RECURSIVE_VARIANCE_PARSE_FAIL"}
+
+    max_variance = max(variances)
+    status = "pass" if max_variance <= float(args.max_recursive_variance_pct) else "fail"
+    decision = "RECURSIVE_CLEAN" if status == "pass" else "RECURSIVE_VARIANCE_DETECTED"
+    return {
+        **result,
+        "status": status,
+        "decision": decision,
+        "recursive_max_variance_pct": max_variance,
+    }
+
+
 def run_check(args: argparse.Namespace, row: dict[str, Any]) -> dict[str, Any]:
-    _ = args
     command = str(row["command"]).split("\t")
     log_path = Path(row["log"])
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -198,8 +300,10 @@ def run_check(args: argparse.Namespace, row: dict[str, Any]) -> dict[str, Any]:
     output = "$ " + " ".join(command) + "\n\n"
     output += (completed.stdout or "") + ("\n" if completed.stdout and completed.stderr else "") + (completed.stderr or "")
     log_path.write_text(output, encoding="utf-8", newline="\n")
-    status = "pass" if completed.returncode == 0 else "fail"
-    result_row = {**row, "status": status, "exit_code": completed.returncode}
+    if row["check_type"] == "lookahead":
+        result_row = classify_lookahead_result(row, completed, output)
+    else:
+        result_row = classify_recursive_result(args, row, completed, output)
     output_csv = Path(str(row["output_csv"]))
     if not output_csv.exists():
         write_placeholder(output_csv, result_row)
@@ -226,6 +330,10 @@ def build_plan(args: argparse.Namespace, selected_classes: list[str]) -> pd.Data
                     "output_csv": str(output_csv),
                     "log": str(log_path),
                     "command": "\t".join(command),
+                    "has_bias": "",
+                    "biased_entry_signals": "",
+                    "biased_exit_signals": "",
+                    "recursive_max_variance_pct": "",
                 }
             )
     return pd.DataFrame(rows)
@@ -248,7 +356,19 @@ def write_outputs(args: argparse.Namespace, frame: pd.DataFrame, selected_classe
     frame.to_csv(output_csv, index=False, lineterminator="\n")
 
     status_counts = frame["status"].value_counts().rename_axis("status").reset_index(name="checks")
-    compact = frame[["strategy_class", "check_type", "status", "decision", "output_csv", "log"]].copy()
+    compact_columns = [
+        "strategy_class",
+        "check_type",
+        "status",
+        "decision",
+        "has_bias",
+        "biased_entry_signals",
+        "biased_exit_signals",
+        "recursive_max_variance_pct",
+        "output_csv",
+        "log",
+    ]
+    compact = frame[[column for column in compact_columns if column in frame.columns]].copy()
     lines = [
         "# Major 11 Immediate Flush Bias Audit",
         "",
