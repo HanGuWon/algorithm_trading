@@ -1,0 +1,2 @@
+artifact,artifact_mode,is_backtest_result,note
+month_breakdown,plan_only,False,Placeholder created by --plan-only. Run without --plan-only to produce real backtest data.
