@@ -72,6 +72,11 @@ docs/validation/analysis/*
 !docs/validation/analysis/major_11_flush_fixed_candidate_set.csv
 !docs/validation/analysis/major_11_flush_fixed_candidate_set_concentration.csv
 !docs/validation/analysis/major_11_flush_fixed_candidate_set_cost_stress.csv
+!docs/validation/analysis/major_11_immediate_flush_canonical_manifest.md
+!docs/validation/analysis/major_11_immediate_flush_canonical_manifest.csv
+!docs/validation/analysis/major_11_immediate_flush_research_backtest_summary.md
+!docs/validation/analysis/major_11_immediate_flush_research_backtest_summary.csv
+!docs/validation/analysis/major_11_immediate_flush_research_backtest_trades.csv
 
 user_data/configs/volatility_rotation_mr_private.json
 user_data/configs/volatility_rotation_mr_private.*.json

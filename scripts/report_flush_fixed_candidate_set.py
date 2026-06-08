@@ -34,10 +34,15 @@ from scan_flush_threshold_surface import (
 ADVANCE_STEPS = {"KEEP_ORIGINAL_IMMEDIATE_FLUSH", "TEST_SIMPLIFIED_IMMEDIATE_FLUSH"}
 SUMMARY_COLUMNS = [
     "fixed_candidate_id",
+    "canonical_fixed_candidate_id",
+    "is_duplicate_signal_set",
+    "alias_fixed_candidate_ids",
     "source_candidate_id",
     "fixed_action",
     "signals",
     "independent_clusters_72h",
+    "active_pairs",
+    "active_years",
     "cluster_excess_72h_median",
     "cluster_excess_72h_median_ci_low",
     "validation_excess_72h_median",
@@ -431,10 +436,71 @@ def add_cost_decisions(summaries: list[dict[str, Any]], cost_frame: pd.DataFrame
     return summary_frame
 
 
+def add_canonical_signal_sets(summary: pd.DataFrame) -> pd.DataFrame:
+    summary = summary.copy()
+    if summary.empty:
+        summary["canonical_fixed_candidate_id"] = ""
+        summary["is_duplicate_signal_set"] = False
+        summary["duplicate_of_fixed_candidate_id"] = ""
+        summary["alias_fixed_candidate_ids"] = ""
+        summary["unique_signal_set_count"] = 0
+        return summary
+
+    canonical_by_hash: dict[str, str] = {}
+    aliases_by_hash: dict[str, str] = {}
+    for signal_hash, group in summary.groupby("signal_set_hash", dropna=False):
+        ordered = group.assign(
+            _canonical_action_rank=(
+                group["fixed_action"].astype(str) != "KEEP_ORIGINAL_IMMEDIATE_FLUSH"
+            ).astype(int),
+            _canonical_excess_rank=-pd.to_numeric(group["cluster_excess_72h_median"], errors="coerce").fillna(
+                float("-inf")
+            ),
+            _canonical_id_rank=group["fixed_candidate_id"].astype(str),
+        ).sort_values(
+            ["_canonical_action_rank", "_canonical_excess_rank", "_canonical_id_rank"],
+            ascending=[True, True, True],
+        )
+        canonical_id = str(ordered.iloc[0]["fixed_candidate_id"])
+        canonical_by_hash[str(signal_hash)] = canonical_id
+        aliases_by_hash[str(signal_hash)] = ",".join(sorted(group["fixed_candidate_id"].astype(str)))
+
+    summary["canonical_fixed_candidate_id"] = summary["signal_set_hash"].astype(str).map(canonical_by_hash)
+    summary["is_duplicate_signal_set"] = (
+        summary["fixed_candidate_id"].astype(str) != summary["canonical_fixed_candidate_id"].astype(str)
+    )
+    summary["duplicate_of_fixed_candidate_id"] = np.where(
+        summary["is_duplicate_signal_set"],
+        summary["canonical_fixed_candidate_id"],
+        "",
+    )
+    summary["alias_fixed_candidate_ids"] = summary["signal_set_hash"].astype(str).map(aliases_by_hash)
+    summary["unique_signal_set_count"] = int(summary["signal_set_hash"].nunique(dropna=False))
+    return summary
+
+
 def table(frame: pd.DataFrame) -> str:
     if frame.empty:
         return "_No rows._"
-    return frame.to_markdown(index=False, floatfmt=".4f")
+    try:
+        return frame.to_markdown(index=False, floatfmt=".4f")
+    except ImportError:
+        columns = [str(column) for column in frame.columns]
+        rows = [
+            [
+                ""
+                if pd.isna(value)
+                else f"{value:.4f}"
+                if isinstance(value, (float, np.floating))
+                else str(value)
+                for value in row
+            ]
+            for row in frame.itertuples(index=False, name=None)
+        ]
+        header = "| " + " | ".join(columns) + " |"
+        separator = "| " + " | ".join("---" for _ in columns) + " |"
+        body = ["| " + " | ".join(row) + " |" for row in rows]
+        return "\n".join([header, separator, *body])
 
 
 def markdown_report(
@@ -472,6 +538,18 @@ def markdown_report(
         values="net_excess_72h_median",
         aggfunc="first",
     ).reset_index()
+    unique_signal_sets = int(summary["signal_set_hash"].nunique(dropna=False)) if not summary.empty else 0
+    duplicate_count = int(summary["is_duplicate_signal_set"].sum()) if "is_duplicate_signal_set" in summary else 0
+    canonical_summary = summary[
+        [
+            "fixed_candidate_id",
+            "canonical_fixed_candidate_id",
+            "is_duplicate_signal_set",
+            "duplicate_of_fixed_candidate_id",
+            "alias_fixed_candidate_ids",
+            "signal_set_hash",
+        ]
+    ].sort_values(["canonical_fixed_candidate_id", "fixed_candidate_id"])
 
     return "\n".join(
         [
@@ -490,10 +568,16 @@ def markdown_report(
             f"- Validation split start: `{args.validation_start}`",
             f"- Matched-null samples per event: `{args.null_samples_per_event}`",
             f"- Cost stress bps: `{', '.join(str(float(value)) for value in args.cost_bps)}`",
+            f"- Unique signal sets: `{unique_signal_sets}`",
+            f"- Duplicate labels: `{duplicate_count}`",
             "",
             "## Fixed Candidate Definitions",
             "",
             table(candidate_defs),
+            "",
+            "## Canonical Signal Sets",
+            "",
+            table(canonical_summary),
             "",
             "## Diagnostic Decision Counts",
             "",
@@ -564,6 +648,7 @@ def main() -> None:
 
     cost_frame = pd.DataFrame(cost_stress_rows)
     summary_frame = add_cost_decisions(summaries, cost_frame)
+    summary_frame = add_canonical_signal_sets(summary_frame)
     concentration_frame = pd.DataFrame(concentration_rows)
 
     output_csv = Path(args.output_csv)
