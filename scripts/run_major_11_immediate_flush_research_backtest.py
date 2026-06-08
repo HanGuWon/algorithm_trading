@@ -63,6 +63,8 @@ ROW_METADATA_KEYS = [
     "strategy_class_count",
     "strategy_discovery_status",
     "strategy_discovery_missing_count",
+    "artifact_mode",
+    "is_backtest_result",
 ]
 
 
@@ -290,6 +292,8 @@ def build_metadata(args: argparse.Namespace, manifest: pd.DataFrame, matrix: pd.
         "strategy_class_names": strategy_classes,
         "export_mode": args.export_mode,
         "fee_scenarios": list(args.fee_scenarios),
+        "artifact_mode": "plan_only" if args.plan_only else "backtest_result",
+        "is_backtest_result": not args.plan_only,
     }
 
 
@@ -717,7 +721,23 @@ def write_breakdown_outputs(trades: pd.DataFrame, args: argparse.Namespace) -> N
     }
     for group_column, path in outputs.items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        aggregate_breakdown(trades, group_column).to_csv(path, index=False, float_format="%.6g", lineterminator="\n")
+        if args.plan_only:
+            plan_only_artifact_frame(f"{group_column}_breakdown").to_csv(path, index=False, lineterminator="\n")
+        else:
+            aggregate_breakdown(trades, group_column).to_csv(path, index=False, float_format="%.6g", lineterminator="\n")
+
+
+def plan_only_artifact_frame(artifact: str) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "artifact": artifact,
+                "artifact_mode": "plan_only",
+                "is_backtest_result": False,
+                "note": "Placeholder created by --plan-only. Run without --plan-only to produce real backtest data.",
+            }
+        ]
+    )
 
 
 def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Namespace, metadata: dict[str, Any]) -> None:
@@ -729,7 +749,10 @@ def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Na
         path.parent.mkdir(parents=True, exist_ok=True)
 
     summary.to_csv(output_csv, index=False, float_format="%.6g", lineterminator="\n")
-    trades.to_csv(trades_csv, index=False, float_format="%.6g", lineterminator="\n")
+    if args.plan_only:
+        plan_only_artifact_frame("trades").to_csv(trades_csv, index=False, lineterminator="\n")
+    else:
+        trades.to_csv(trades_csv, index=False, float_format="%.6g", lineterminator="\n")
     write_breakdown_outputs(trades, args)
     metadata_json.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8", newline="\n")
 
@@ -743,6 +766,8 @@ def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Na
         "canonical_fixed_candidate_id",
         "exit_mode",
         "cost_scenario",
+        "artifact_mode",
+        "is_backtest_result",
         "status",
         "trades",
         "profit_usdt",
@@ -774,6 +799,8 @@ def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Na
         f"- Manifest rows: `{metadata['manifest_row_count']}`",
         f"- Exit modes: `{metadata['exit_mode_count']}`",
         f"- Strategy classes: `{metadata['strategy_class_count']}`",
+        f"- Artifact mode: `{metadata['artifact_mode']}`",
+        f"- Is backtest result: `{metadata['is_backtest_result']}`",
         f"- Manifest SHA256: `{metadata['manifest_sha256']}`",
         f"- Strategy file SHA256: `{metadata['strategy_file_sha256']}`",
         f"- Config SHA256: `{metadata['config_sha256']}`",
@@ -795,6 +822,15 @@ def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Na
         "## Decision Counts",
         "",
         markdown_table(decision_counts),
+        "",
+        "## Plan-Only Guard",
+        "",
+        (
+            "`--plan-only` was used. Summary rows are execution plans, and trades/breakdown CSVs are explicit "
+            "placeholder artifacts, not backtest results."
+            if args.plan_only
+            else "Real backtest outputs were requested. Trades and breakdown CSVs are parsed from Freqtrade results."
+        ),
         "",
         "## Summary",
         "",
@@ -827,7 +863,14 @@ def main() -> None:
     metadata.update(write_strategy_discovery(args, matrix, metadata))
 
     if args.plan_only:
-        planned = matrix.assign(status="planned", decision="NOT_RUN_PLAN_ONLY", export_mode=args.export_mode)
+        planned = matrix.assign(
+            status="planned",
+            decision="NOT_RUN_PLAN_ONLY",
+            export_mode=args.export_mode,
+            artifact_mode="plan_only",
+            is_backtest_result=False,
+            plan_only_notice="Execution plan only; not a Freqtrade backtest result.",
+        )
         planned = add_metadata_columns(planned, metadata)
         write_outputs(planned, pd.DataFrame(), args, metadata)
         print(f"Wrote plan-only matrix to {args.output_md}")
@@ -842,6 +885,9 @@ def main() -> None:
             trade_frames.append(trades)
 
     summary = pd.DataFrame(rows)
+    if not summary.empty:
+        summary["artifact_mode"] = "backtest_result"
+        summary["is_backtest_result"] = True
     summary = add_metadata_columns(summary, metadata)
     trades = pd.concat(trade_frames, ignore_index=True, sort=False) if trade_frames else pd.DataFrame()
     write_outputs(summary, trades, args, metadata)

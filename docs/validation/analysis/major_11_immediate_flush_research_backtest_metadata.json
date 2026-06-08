@@ -1,4 +1,5 @@
 {
+  "artifact_mode": "plan_only",
   "config_sha256": "754a7276bf52e6904cbb07fd217662273306b6d5074b970b6eb991c04804ea48",
   "exit_mode_count": 6,
   "expected_run_count": 42,
@@ -8,8 +9,9 @@
     "base"
   ],
   "freqtrade_version": "unavailable: C:\\Users\\user\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe: No module named freqtrade",
-  "git_commit": "47795917d43c39dc2a878bc5e4f1decf41cdee8c",
+  "git_commit": "d94d2927ba1a5349bcd420ebb6b47515740a1f6d",
   "git_worktree_dirty": true,
+  "is_backtest_result": false,
   "manifest_row_count": 7,
   "manifest_sha256": "5bbe6d9824c23d37bf19afb32acaeb4ccb77c3c40a68e1a321b4b388b11d347b",
   "strategy_class_count": 42,

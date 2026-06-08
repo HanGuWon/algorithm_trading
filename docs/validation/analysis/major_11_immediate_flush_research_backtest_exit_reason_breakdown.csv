@@ -1,1 +1,2 @@
-strategy_class,canonical_fixed_candidate_id,exit_mode,exit_reason,trades,profit_usdt,profit_pct_sum,win_rate,avg_profit_abs,max_single_trade_profit,max_single_trade_loss
+artifact,artifact_mode,is_backtest_result,note
+exit_reason_breakdown,plan_only,False,Placeholder created by --plan-only. Run without --plan-only to produce real backtest data.

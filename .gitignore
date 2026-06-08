@@ -84,6 +84,8 @@ docs/validation/analysis/*
 !docs/validation/analysis/major_11_immediate_flush_research_backtest_exit_reason_breakdown.csv
 !docs/validation/analysis/major_11_immediate_flush_research_backtest_metadata.json
 !docs/validation/analysis/major_11_immediate_flush_strategy_discovery.txt
+!docs/validation/analysis/major_11_immediate_flush_strategy_matrix_verification.md
+!docs/validation/analysis/major_11_immediate_flush_strategy_matrix_verification.csv
 !docs/validation/analysis/major_11_immediate_flush_research_bias_audit.md
 !docs/validation/analysis/major_11_immediate_flush_research_bias_audit.csv
 !docs/validation/analysis/major_11_immediate_flush_lookahead_*.csv
