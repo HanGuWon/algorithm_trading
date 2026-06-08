@@ -37,6 +37,8 @@ ENTRY_MASK_COVERAGE_CLASSES = [
     "ImmediateFlushResearchRFC015Hold72h",
 ]
 
+BAD_AUDIT_STATUSES = {"fail", "schema_fail", "inconclusive_insufficient_signals"}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -420,6 +422,17 @@ def write_outputs(args: argparse.Namespace, frame: pd.DataFrame, selected_classe
     output_md.write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
+def enforce_runtime_audit_status(args: argparse.Namespace, result: pd.DataFrame) -> None:
+    if not args.require_runtime or result.empty or "status" not in result:
+        return
+    bad = result[result["status"].astype(str).isin(BAD_AUDIT_STATUSES)]
+    if bad.empty:
+        return
+    counts = bad["status"].value_counts().to_dict()
+    details = ", ".join(f"{key}={value}" for key, value in counts.items())
+    raise SystemExit(f"Bias audit did not fully pass: {details}")
+
+
 def main() -> None:
     args = parse_args()
     manifest = pd.read_csv(args.manifest)
@@ -448,6 +461,7 @@ def main() -> None:
         rows.append(run_check(args, {**row, "decision": "EXECUTED"}))
     result = pd.DataFrame(rows)
     write_outputs(args, result, selected_classes, all_classes)
+    enforce_runtime_audit_status(args, result)
     print(f"Wrote bias-audit result to {args.output_md}")
 
 

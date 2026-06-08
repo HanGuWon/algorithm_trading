@@ -32,6 +32,24 @@ FEE_SCENARIOS: dict[str, float | None] = {
 
 REQUIRED_TRADE_COLUMNS = ["pair", "open_date", "close_date", "profit_abs", "profit_ratio"]
 
+FAIL_DECISIONS = {
+    "BACKTEST_FAILED",
+    "BACKTEST_RESULT_MISSING",
+    "BACKTEST_RESULT_SCHEMA_FAIL",
+    "NO_TRADES",
+}
+
+BAD_RESEARCH_DECISIONS = {
+    "INSUFFICIENT_TRADES",
+    "VALIDATION_FAIL",
+    "INSUFFICIENT_BREADTH",
+    "TOP_TRADE_CONCENTRATED",
+    "COST_SENSITIVE",
+    "CONCENTRATED_EDGE",
+    "EXIT_REDESIGN_NEEDED",
+    "REJECT_PORTFOLIO",
+}
+
 BREAKDOWN_COLUMNS = [
     "strategy_class",
     "canonical_fixed_candidate_id",
@@ -170,6 +188,18 @@ def parse_args() -> argparse.Namespace:
         "--allow-discovery-failure",
         action="store_true",
         help="Allow real backtests even when strategy discovery did not pass.",
+    )
+    parser.add_argument(
+        "--no-fail-on-execution-error",
+        dest="fail_on_execution_error",
+        action="store_false",
+        help="Do not exit non-zero when real backtest execution/schema/no-trades errors are present.",
+    )
+    parser.set_defaults(fail_on_execution_error=True)
+    parser.add_argument(
+        "--fail-on-research-reject",
+        action="store_true",
+        help="Exit non-zero when any real backtest row fails the research candidate gate.",
     )
     parser.add_argument("--skip-discovery", action="store_true")
     parser.add_argument("--max-runs", type=int, default=0, help="Optional smoke-test limit after matrix creation.")
@@ -917,11 +947,33 @@ def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Na
     output_md.write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
+def enforce_real_run_exit_status(summary: pd.DataFrame, args: argparse.Namespace) -> None:
+    if args.plan_only or summary.empty or "decision" not in summary:
+        return
+    decisions = set(summary["decision"].fillna("").astype(str))
+    execution_errors = sorted(decisions & FAIL_DECISIONS)
+    research_rejections = sorted(decisions & BAD_RESEARCH_DECISIONS)
+    if args.fail_on_execution_error and execution_errors:
+        raise SystemExit(f"Backtest execution errors detected: {execution_errors}")
+    if args.fail_on_research_reject and research_rejections:
+        raise SystemExit(f"Research gate rejections detected: {research_rejections}")
+
+
 def main() -> None:
     args = parse_args()
     manifest = load_manifest(Path(args.manifest), args.candidate_ids)
     matrix = build_matrix(manifest, args.exit_labels, args.fee_scenarios, args.max_runs)
     metadata = build_metadata(args, manifest, matrix)
+    if (
+        not args.plan_only
+        and not args.discovery_only
+        and args.skip_discovery
+        and not args.allow_discovery_failure
+    ):
+        raise SystemExit(
+            "Refusing real backtest with --skip-discovery. "
+            "Use --allow-discovery-failure only for explicit local experiments."
+        )
     metadata.update(write_strategy_discovery(args, matrix, metadata))
 
     if args.discovery_only:
@@ -984,6 +1036,7 @@ def main() -> None:
     summary = add_metadata_columns(summary, metadata)
     trades = pd.concat(trade_frames, ignore_index=True, sort=False) if trade_frames else pd.DataFrame()
     write_outputs(summary, trades, args, metadata)
+    enforce_real_run_exit_status(summary, args)
     print(f"Wrote backtest summary to {selected_output_paths(args)['output_md']}")
 
 

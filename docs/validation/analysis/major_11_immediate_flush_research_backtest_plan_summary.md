@@ -19,7 +19,7 @@
 - Manifest SHA256: `5bbe6d9824c23d37bf19afb32acaeb4ccb77c3c40a68e1a321b4b388b11d347b`
 - Strategy file SHA256: `7aefbe0abb124037556afc35b4a89f4590e6bbfbde5c02150b5de2e821fa5d8c`
 - Config SHA256: `754a7276bf52e6904cbb07fd217662273306b6d5074b970b6eb991c04804ea48`
-- Input git commit: `7aac853df7ace2a575dc67f0d2a8bf53e40bccdd`
+- Input git commit: `17f431f59f3616d6785ac57c8337b7dc4e49cd5d`
 - Input git worktree dirty at run time: `True`
 - Freqtrade version: `unavailable: C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe: No module named freqtrade`
 - Discovery status: `not_run_plan_only`
