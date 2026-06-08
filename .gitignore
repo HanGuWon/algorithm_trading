@@ -11,6 +11,7 @@ user_data/data/
 user_data/hyperopt_results/
 user_data/strategies/__pycache__/
 scripts/__pycache__/
+__pycache__/
 user_data/pairs/*.before.json
 user_data/*.sqlite
 user_data/*.sqlite-*
@@ -77,6 +78,16 @@ docs/validation/analysis/*
 !docs/validation/analysis/major_11_immediate_flush_research_backtest_summary.md
 !docs/validation/analysis/major_11_immediate_flush_research_backtest_summary.csv
 !docs/validation/analysis/major_11_immediate_flush_research_backtest_trades.csv
+!docs/validation/analysis/major_11_immediate_flush_research_backtest_pair_breakdown.csv
+!docs/validation/analysis/major_11_immediate_flush_research_backtest_year_breakdown.csv
+!docs/validation/analysis/major_11_immediate_flush_research_backtest_month_breakdown.csv
+!docs/validation/analysis/major_11_immediate_flush_research_backtest_exit_reason_breakdown.csv
+!docs/validation/analysis/major_11_immediate_flush_research_backtest_metadata.json
+!docs/validation/analysis/major_11_immediate_flush_strategy_discovery.txt
+!docs/validation/analysis/major_11_immediate_flush_research_bias_audit.md
+!docs/validation/analysis/major_11_immediate_flush_research_bias_audit.csv
+!docs/validation/analysis/major_11_immediate_flush_lookahead_*.csv
+!docs/validation/analysis/major_11_immediate_flush_recursive_*.csv
 
 user_data/configs/volatility_rotation_mr_private.json
 user_data/configs/volatility_rotation_mr_private.*.json

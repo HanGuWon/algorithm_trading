@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -8,7 +9,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from longonly_research_utils import parse_backtest_zip
@@ -23,6 +23,48 @@ EXIT_LABELS = {
     "BbMidReclaim72h": "bb_mid_reclaim_or_72h",
 }
 
+FEE_SCENARIOS: dict[str, float | None] = {
+    "base": None,
+    "fee_2x_real": 0.0008,
+    "fee_5bps_real": 0.0005,
+    "fee_10bps_real": 0.0010,
+}
+
+REQUIRED_TRADE_COLUMNS = ["pair", "open_date", "close_date", "profit_abs", "profit_ratio"]
+
+BREAKDOWN_COLUMNS = [
+    "strategy_class",
+    "canonical_fixed_candidate_id",
+    "exit_mode",
+    "pair",
+    "year",
+    "month",
+    "exit_reason",
+    "trades",
+    "profit_usdt",
+    "profit_pct_sum",
+    "win_rate",
+    "avg_profit_abs",
+    "max_single_trade_profit",
+    "max_single_trade_loss",
+]
+
+ROW_METADATA_KEYS = [
+    "git_commit",
+    "git_worktree_dirty",
+    "manifest_sha256",
+    "strategy_file_sha256",
+    "config_sha256",
+    "freqtrade_version",
+    "expected_run_count",
+    "manifest_row_count",
+    "exit_mode_count",
+    "fee_scenario_count",
+    "strategy_class_count",
+    "strategy_discovery_status",
+    "strategy_discovery_missing_count",
+]
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -35,6 +77,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", default="user_data/configs/volatility_rotation_mr_backtest_major_11.json")
     parser.add_argument("--datadir", default="user_data/data/binance")
     parser.add_argument("--strategy-path", default="user_data/strategies")
+    parser.add_argument(
+        "--strategy-file",
+        default="user_data/strategies/VolatilityRotationMRImmediateFlushResearch.py",
+    )
     parser.add_argument("--timerange", default="20200109-20260603")
     parser.add_argument(
         "--output-csv",
@@ -48,12 +94,39 @@ def parse_args() -> argparse.Namespace:
         "--trades-csv",
         default="docs/validation/analysis/major_11_immediate_flush_research_backtest_trades.csv",
     )
+    parser.add_argument(
+        "--pair-breakdown-csv",
+        default="docs/validation/analysis/major_11_immediate_flush_research_backtest_pair_breakdown.csv",
+    )
+    parser.add_argument(
+        "--year-breakdown-csv",
+        default="docs/validation/analysis/major_11_immediate_flush_research_backtest_year_breakdown.csv",
+    )
+    parser.add_argument(
+        "--month-breakdown-csv",
+        default="docs/validation/analysis/major_11_immediate_flush_research_backtest_month_breakdown.csv",
+    )
+    parser.add_argument(
+        "--exit-reason-breakdown-csv",
+        default="docs/validation/analysis/major_11_immediate_flush_research_backtest_exit_reason_breakdown.csv",
+    )
+    parser.add_argument(
+        "--metadata-json",
+        default="docs/validation/analysis/major_11_immediate_flush_research_backtest_metadata.json",
+    )
+    parser.add_argument(
+        "--discovery-output",
+        default="docs/validation/analysis/major_11_immediate_flush_strategy_discovery.txt",
+    )
     parser.add_argument("--logs-dir", default="docs/validation/logs/major_11_immediate_flush_backtest")
     parser.add_argument("--backtest-dir", default="user_data/backtest_results/major_11_immediate_flush")
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--exit-labels", nargs="+", default=list(EXIT_LABELS))
     parser.add_argument("--candidate-ids", nargs="+", default=[])
+    parser.add_argument("--fee-scenarios", nargs="+", default=["base"], choices=list(FEE_SCENARIOS))
+    parser.add_argument("--export-mode", default="trades", choices=["trades", "signals"])
     parser.add_argument("--plan-only", action="store_true")
+    parser.add_argument("--skip-discovery", action="store_true")
     parser.add_argument("--max-runs", type=int, default=0, help="Optional smoke-test limit after matrix creation.")
     parser.add_argument("--validation-start", default="2024-01-01")
     parser.add_argument("--default-fee-per-side", type=float, default=0.0004)
@@ -70,8 +143,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def strategy_class_name(candidate_id: str, exit_label: str) -> str:
-    source_id = candidate_id.split("_", maxsplit=1)[0]
-    return f"ImmediateFlushResearch{source_id}{exit_label}"
+    safe_id = (
+        candidate_id.replace("_original", "")
+        .replace("_drop_breakout_block", "NoBreakout")
+        .replace("_", "")
+    )
+    return f"ImmediateFlushResearch{safe_id}{exit_label}"
 
 
 def load_manifest(path: Path, candidate_ids: list[str]) -> pd.DataFrame:
@@ -83,27 +160,44 @@ def load_manifest(path: Path, candidate_ids: list[str]) -> pd.DataFrame:
     return manifest
 
 
-def build_matrix(manifest: pd.DataFrame, exit_labels: list[str], max_runs: int) -> pd.DataFrame:
-    unknown = sorted(set(exit_labels) - set(EXIT_LABELS))
-    if unknown:
-        raise ValueError(f"Unknown exit labels: {unknown}")
+def build_matrix(
+    manifest: pd.DataFrame,
+    exit_labels: list[str],
+    fee_scenarios: list[str],
+    max_runs: int,
+) -> pd.DataFrame:
+    unknown_exits = sorted(set(exit_labels) - set(EXIT_LABELS))
+    if unknown_exits:
+        raise ValueError(f"Unknown exit labels: {unknown_exits}")
+
+    unknown_fees = sorted(set(fee_scenarios) - set(FEE_SCENARIOS))
+    if unknown_fees:
+        raise ValueError(f"Unknown fee scenarios: {unknown_fees}")
 
     rows: list[dict[str, Any]] = []
     for _, candidate in manifest.iterrows():
         candidate_id = str(candidate["canonical_fixed_candidate_id"])
         for exit_label in exit_labels:
-            rows.append(
-                {
-                    "canonical_fixed_candidate_id": candidate_id,
-                    "alias_fixed_candidate_ids": candidate.get("alias_fixed_candidate_ids", ""),
-                    "signal_set_hash": candidate.get("signal_set_hash", ""),
-                    "exit_label": exit_label,
-                    "exit_mode": EXIT_LABELS[exit_label],
-                    "strategy_class": strategy_class_name(candidate_id, exit_label),
-                    "cost_scenario": "base",
-                }
-            )
+            strategy_class = strategy_class_name(candidate_id, exit_label)
+            for fee_scenario in fee_scenarios:
+                rows.append(
+                    {
+                        "canonical_fixed_candidate_id": candidate_id,
+                        "alias_fixed_candidate_ids": candidate.get("alias_fixed_candidate_ids", ""),
+                        "signal_set_hash": candidate.get("signal_set_hash", ""),
+                        "exit_label": exit_label,
+                        "exit_mode": EXIT_LABELS[exit_label],
+                        "strategy_class": strategy_class,
+                        "cost_scenario": fee_scenario,
+                        "freqtrade_fee": FEE_SCENARIOS[fee_scenario],
+                    }
+                )
+
     frame = pd.DataFrame(rows)
+    class_rows = frame[["canonical_fixed_candidate_id", "exit_label", "strategy_class"]].drop_duplicates()
+    duplicated_classes = class_rows[class_rows["strategy_class"].duplicated(keep=False)]
+    if not duplicated_classes.empty:
+        raise ValueError(f"Strategy class name collision:\n{duplicated_classes.to_string(index=False)}")
     return frame.head(max_runs).copy() if max_runs > 0 else frame
 
 
@@ -118,8 +212,9 @@ def subprocess_env() -> dict[str, str]:
 def run_command(command: list[str], log_path: Path) -> subprocess.CompletedProcess[str]:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     completed = subprocess.run(command, capture_output=True, text=True, check=False, env=subprocess_env())
-    output = (completed.stdout or "") + ("\n" if completed.stdout and completed.stderr else "") + (completed.stderr or "")
-    log_path.write_text(output, encoding="utf-8")
+    output = "$ " + " ".join(command) + "\n\n"
+    output += (completed.stdout or "") + ("\n" if completed.stdout and completed.stderr else "") + (completed.stderr or "")
+    log_path.write_text(output, encoding="utf-8", newline="\n")
     return completed
 
 
@@ -132,6 +227,142 @@ def latest_backtest_zip(backtest_dir: Path) -> Path | None:
     if not latest:
         return None
     return backtest_dir / str(latest)
+
+
+def sha256_file(path: Path) -> str:
+    if not path.exists():
+        return ""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def git_commit() -> tuple[str, bool]:
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        return commit, bool(status)
+    except (OSError, subprocess.CalledProcessError):
+        return "", False
+
+
+def freqtrade_version(python_executable: str) -> str:
+    completed = subprocess.run(
+        [python_executable, "-m", "freqtrade", "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=subprocess_env(),
+    )
+    output = ((completed.stdout or "") + "\n" + (completed.stderr or "")).strip()
+    if completed.returncode != 0:
+        return "unavailable" if not output else "unavailable: " + output.splitlines()[-1]
+    return output.splitlines()[0] if output else "available"
+
+
+def build_metadata(args: argparse.Namespace, manifest: pd.DataFrame, matrix: pd.DataFrame) -> dict[str, Any]:
+    commit, dirty = git_commit()
+    strategy_classes = sorted(matrix["strategy_class"].astype(str).unique())
+    return {
+        "git_commit": commit,
+        "git_worktree_dirty": dirty,
+        "manifest_sha256": sha256_file(Path(args.manifest)),
+        "strategy_file_sha256": sha256_file(Path(args.strategy_file)),
+        "config_sha256": sha256_file(Path(args.config)),
+        "freqtrade_version": freqtrade_version(args.python),
+        "expected_run_count": int(len(matrix)),
+        "manifest_row_count": int(len(manifest)),
+        "exit_mode_count": int(len(args.exit_labels)),
+        "fee_scenario_count": int(len(args.fee_scenarios)),
+        "strategy_class_count": int(len(strategy_classes)),
+        "strategy_class_names": strategy_classes,
+        "export_mode": args.export_mode,
+        "fee_scenarios": list(args.fee_scenarios),
+    }
+
+
+def add_metadata_columns(frame: pd.DataFrame, metadata: dict[str, Any]) -> pd.DataFrame:
+    frame = frame.copy()
+    for key in ROW_METADATA_KEYS:
+        frame[key] = metadata.get(key, "")
+    return frame
+
+
+def write_strategy_discovery(args: argparse.Namespace, matrix: pd.DataFrame, metadata: dict[str, Any]) -> dict[str, Any]:
+    output_path = Path(args.discovery_output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    expected_classes = sorted(matrix["strategy_class"].astype(str).unique())
+    command = [
+        args.python,
+        "-m",
+        "freqtrade",
+        "list-strategies",
+        "--strategy-path",
+        args.strategy_path,
+        "--recursive-strategy-search",
+    ]
+
+    lines = [
+        "# Major 11 Immediate Flush Strategy Discovery",
+        "",
+        f"expected_strategy_class_count: {len(expected_classes)}",
+        f"expected_run_count: {metadata['expected_run_count']}",
+        f"manifest_sha256: {metadata['manifest_sha256']}",
+        f"command: {' '.join(command)}",
+        "",
+        "## Expected Classes",
+        "",
+        "\n".join(expected_classes),
+        "",
+    ]
+
+    if args.skip_discovery:
+        lines.extend(["## Result", "", "status: skipped"])
+        output_path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+        return {"strategy_discovery_status": "skipped", "strategy_discovery_missing_count": ""}
+
+    if args.plan_only:
+        lines.extend(["## Result", "", "status: not_run_plan_only"])
+        output_path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+        return {"strategy_discovery_status": "not_run_plan_only", "strategy_discovery_missing_count": ""}
+
+    completed = subprocess.run(command, capture_output=True, text=True, check=False, env=subprocess_env())
+    output = (completed.stdout or "") + ("\n" if completed.stdout and completed.stderr else "") + (completed.stderr or "")
+    missing = [class_name for class_name in expected_classes if class_name not in output]
+    status = "pass" if completed.returncode == 0 and not missing else "fail"
+    lines.extend(
+        [
+            "## Result",
+            "",
+            f"status: {status}",
+            f"exit_code: {completed.returncode}",
+            f"missing_expected_class_count: {len(missing)}",
+            "",
+            "## Missing Expected Classes",
+            "",
+            "\n".join(missing) if missing else "_None._",
+            "",
+            "## Raw Output",
+            "",
+            "```",
+            output.strip(),
+            "```",
+        ]
+    )
+    output_path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+    return {"strategy_discovery_status": status, "strategy_discovery_missing_count": len(missing)}
 
 
 def profit_factor(profits: pd.Series) -> float:
@@ -171,12 +402,53 @@ def extra_fee_2x_cost(trades: pd.DataFrame, default_fee_per_side: float) -> pd.S
     return notional * (open_fee + close_fee)
 
 
+def first_numeric(mapping: dict[str, Any], keys: list[str], default: float = 0.0) -> float:
+    for key in keys:
+        value = mapping.get(key)
+        if value is None or value == "":
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return default
+
+
+def value_counts_text(trades: pd.DataFrame, column: str, limit: int = 12) -> str:
+    if trades.empty or column not in trades:
+        return ""
+    counts = trades[column].fillna("UNKNOWN").astype(str).value_counts().head(limit)
+    return ", ".join(f"{key}:{int(value)}" for key, value in counts.items())
+
+
+def same_candle_collisions(trades: pd.DataFrame) -> int | str:
+    if trades.empty or "open_date" not in trades or "close_date" not in trades:
+        return ""
+    open_dates = pd.to_datetime(trades["open_date"], utc=True, errors="coerce")
+    close_dates = pd.to_datetime(trades["close_date"], utc=True, errors="coerce")
+    return int((open_dates == close_dates).sum())
+
+
+def missing_trade_columns(trades: pd.DataFrame) -> list[str]:
+    if trades.empty:
+        return []
+    return [column for column in REQUIRED_TRADE_COLUMNS if column not in trades.columns]
+
+
 def classify(row: dict[str, Any], args: argparse.Namespace) -> str:
+    if row.get("decision") in {"BACKTEST_RESULT_MISSING", "BACKTEST_RESULT_SCHEMA_FAIL"}:
+        return str(row["decision"])
     if row["status"] != "pass":
         return "BACKTEST_FAILED"
+    if row["trades"] <= 0:
+        return "NO_TRADES"
     if row["trades"] < args.min_trades:
         return "INSUFFICIENT_TRADES"
-    if row["validation_trades"] < args.min_validation_trades or row["validation_profit_pct"] <= 0:
+    if (
+        row["validation_trades"] < args.min_validation_trades
+        or row["validation_profit_usdt"] <= 0
+        or row["validation_profit_pct_of_starting_balance"] <= 0
+    ):
         return "VALIDATION_FAIL"
     if row["active_pairs"] < args.min_active_pairs or row["active_years"] < args.min_active_years:
         return "INSUFFICIENT_BREADTH"
@@ -209,7 +481,7 @@ def summarize_run(
     profits = pd.to_numeric(trades.get("profit_abs", pd.Series(dtype=float)), errors="coerce").fillna(0.0)
     ratios = pd.to_numeric(trades.get("profit_ratio", pd.Series(dtype=float)), errors="coerce").fillna(0.0)
     if "open_date" in trades:
-        open_dates = pd.to_datetime(trades["open_date"], utc=True)
+        open_dates = pd.to_datetime(trades["open_date"], utc=True, errors="coerce")
         validation = trades[open_dates >= validation_start].copy()
         active_years = int(open_dates.dt.year.nunique())
     else:
@@ -218,7 +490,9 @@ def summarize_run(
         active_years = 0
 
     if "close_date" in trades and "open_date" in trades and not trades.empty:
-        durations = pd.to_datetime(trades["close_date"], utc=True) - pd.to_datetime(trades["open_date"], utc=True)
+        durations = pd.to_datetime(trades["close_date"], utc=True, errors="coerce") - pd.to_datetime(
+            trades["open_date"], utc=True, errors="coerce"
+        )
         avg_duration_hours = float(durations.dt.total_seconds().mean() / 3600.0)
     else:
         avg_duration_hours = float("nan")
@@ -237,11 +511,30 @@ def summarize_run(
     cost_20bps = notional * (float(args.round_trip_cost_bps) / 10000.0)
     funding_proxy = notional * (float(args.adverse_funding_bps) / 10000.0)
     total_profit = float(profits.sum())
+    validation_profit_usdt = (
+        float(pd.to_numeric(validation.get("profit_abs", pd.Series(dtype=float)), errors="coerce").sum())
+        if not validation.empty
+        else 0.0
+    )
+
+    starting_balance = first_numeric(
+        strategy_data,
+        ["starting_balance", "backtest_start_balance", "dry_run_wallet", "start_balance"],
+        0.0,
+    )
+    final_balance = first_numeric(
+        strategy_data,
+        ["final_balance", "backtest_end_balance", "end_balance"],
+        starting_balance + total_profit if starting_balance > 0 else total_profit,
+    )
+    validation_pct_of_start = (validation_profit_usdt / starting_balance) * 100.0 if starting_balance > 0 else 0.0
 
     row: dict[str, Any] = {
         **matrix_row,
         "status": "pass",
         "trades": int(strategy_data.get("total_trades", len(trades)) or len(trades)),
+        "starting_balance": starting_balance,
+        "final_balance": final_balance,
         "profit_usdt": float(strategy_data.get("profit_total_abs", total_profit) or total_profit),
         "profit_pct": float(strategy_data.get("profit_total", ratios.sum()) or ratios.sum()) * 100.0,
         "max_drawdown_pct": float(
@@ -254,15 +547,14 @@ def summarize_run(
         "active_pairs": int(trades["pair"].nunique()) if "pair" in trades else 0,
         "active_years": active_years,
         "validation_trades": int(len(validation)),
-        "validation_profit_usdt": float(pd.to_numeric(validation.get("profit_abs", pd.Series(dtype=float)), errors="coerce").sum())
-        if not validation.empty
-        else 0.0,
+        "validation_profit_usdt": validation_profit_usdt,
         "validation_profit_pct": float(
             pd.to_numeric(validation.get("profit_ratio", pd.Series(dtype=float)), errors="coerce").sum()
         )
         * 100.0
         if not validation.empty
         else 0.0,
+        "validation_profit_pct_of_starting_balance": validation_pct_of_start,
         "top_pair_profit_share": positive_share(pair_profit.sort_values(ascending=False).head(1), total_positive),
         "top_year_profit_share": positive_share(year_profit.sort_values(ascending=False).head(1), total_positive),
         "top_1_trade_profit_share": positive_share(sorted_positive.head(1), total_positive),
@@ -272,6 +564,11 @@ def summarize_run(
         "profit_after_fee_2x": total_profit - float(fee_2x.sum()),
         "profit_after_20bps_cost_proxy": total_profit - float(cost_20bps.sum()),
         "profit_after_adverse_funding_proxy": total_profit - float(funding_proxy.sum()),
+        "exit_reason_counts": value_counts_text(trades, "exit_reason"),
+        "enter_tag_counts": value_counts_text(trades, "enter_tag"),
+        "rejected_signal_count_if_available": "",
+        "same_candle_entry_exit_collisions_if_available": same_candle_collisions(trades),
+        "missing_trade_columns": "",
     }
     row["decision"] = classify(row, args)
 
@@ -279,13 +576,16 @@ def summarize_run(
         trades["strategy_class"] = matrix_row["strategy_class"]
         trades["canonical_fixed_candidate_id"] = matrix_row["canonical_fixed_candidate_id"]
         trades["exit_mode"] = matrix_row["exit_mode"]
+        trades["cost_scenario"] = matrix_row["cost_scenario"]
     return row, trades
 
 
 def run_backtest(matrix_row: dict[str, Any], args: argparse.Namespace) -> tuple[dict[str, Any], pd.DataFrame]:
     strategy = str(matrix_row["strategy_class"])
-    run_dir = Path(args.backtest_dir) / strategy
-    log_path = Path(args.logs_dir) / f"{strategy}.log"
+    cost_scenario = str(matrix_row["cost_scenario"])
+    run_key = f"{strategy}__{cost_scenario}"
+    run_dir = Path(args.backtest_dir) / run_key
+    log_path = Path(args.logs_dir) / f"{run_key}.log"
     command = [
         args.python,
         "-m",
@@ -304,12 +604,20 @@ def run_backtest(matrix_row: dict[str, Any], args: argparse.Namespace) -> tuple[
         "--timerange",
         args.timerange,
         "--export",
-        "signals",
+        args.export_mode,
         "--backtest-directory",
         str(run_dir),
     ]
+    if matrix_row.get("freqtrade_fee") is not None:
+        command.extend(["--fee", str(matrix_row["freqtrade_fee"])])
+
     completed = run_command(command, log_path)
-    base_row = {**matrix_row, "log": str(log_path), "exit_code": completed.returncode}
+    base_row = {
+        **matrix_row,
+        "log": str(log_path),
+        "exit_code": completed.returncode,
+        "export_mode": args.export_mode,
+    }
     if completed.returncode != 0:
         return {**base_row, "status": "fail", "decision": "BACKTEST_FAILED"}, pd.DataFrame()
 
@@ -317,8 +625,24 @@ def run_backtest(matrix_row: dict[str, Any], args: argparse.Namespace) -> tuple[
     if zip_path is None:
         return {**base_row, "status": "fail", "decision": "BACKTEST_RESULT_MISSING"}, pd.DataFrame()
 
-    strategy_data, trades = parse_backtest_zip(zip_path, strategy)
+    try:
+        strategy_data, trades = parse_backtest_zip(zip_path, strategy)
+    except (KeyError, StopIteration, json.JSONDecodeError, OSError) as exc:
+        return {
+            **base_row,
+            "status": "fail",
+            "decision": "BACKTEST_RESULT_SCHEMA_FAIL",
+            "missing_trade_columns": f"parse_error:{type(exc).__name__}",
+            "results_zip": str(zip_path),
+        }, pd.DataFrame()
+
+    missing = missing_trade_columns(trades)
     row, trades = summarize_run(strategy_data, trades, base_row, args)
+    if missing:
+        row["status"] = "fail"
+        row["decision"] = "BACKTEST_RESULT_SCHEMA_FAIL"
+        row["missing_trade_columns"] = ",".join(missing)
+        trades = pd.DataFrame()
     row["results_zip"] = str(zip_path)
     return row, trades
 
@@ -332,16 +656,82 @@ def markdown_table(frame: pd.DataFrame) -> str:
         return "```csv\n" + frame.to_csv(index=False).replace("\r\n", "\n").strip() + "\n```"
 
 
-def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Namespace) -> None:
+def normalise_breakdown_trades(trades: pd.DataFrame) -> pd.DataFrame:
+    if trades.empty:
+        return pd.DataFrame()
+    frame = trades.copy()
+    frame["profit_abs"] = pd.to_numeric(frame.get("profit_abs", 0.0), errors="coerce").fillna(0.0)
+    frame["profit_ratio"] = pd.to_numeric(frame.get("profit_ratio", 0.0), errors="coerce").fillna(0.0)
+    open_dates = pd.to_datetime(frame.get("open_date", pd.Series(dtype=str)), utc=True, errors="coerce")
+    frame["year"] = open_dates.dt.year.astype("Int64").astype(str).replace("<NA>", "UNKNOWN")
+    frame["month"] = open_dates.dt.strftime("%Y-%m").fillna("UNKNOWN")
+    if "exit_reason" not in frame:
+        if "exit_tag" in frame:
+            frame["exit_reason"] = frame["exit_tag"]
+        elif "sell_reason" in frame:
+            frame["exit_reason"] = frame["sell_reason"]
+        else:
+            frame["exit_reason"] = "UNKNOWN"
+    frame["exit_reason"] = frame["exit_reason"].fillna("UNKNOWN").astype(str)
+    return frame
+
+
+def aggregate_breakdown(trades: pd.DataFrame, group_column: str) -> pd.DataFrame:
+    frame = normalise_breakdown_trades(trades)
+    output_columns = [
+        "strategy_class",
+        "canonical_fixed_candidate_id",
+        "exit_mode",
+        group_column,
+        "trades",
+        "profit_usdt",
+        "profit_pct_sum",
+        "win_rate",
+        "avg_profit_abs",
+        "max_single_trade_profit",
+        "max_single_trade_loss",
+    ]
+    if frame.empty:
+        return pd.DataFrame(columns=output_columns)
+
+    keys = ["strategy_class", "canonical_fixed_candidate_id", "exit_mode", group_column]
+    grouped = frame.groupby(keys, dropna=False)
+    result = grouped.agg(
+        trades=("profit_abs", "size"),
+        profit_usdt=("profit_abs", "sum"),
+        profit_pct_sum=("profit_ratio", lambda series: float(series.sum()) * 100.0),
+        win_rate=("profit_abs", lambda series: float((series > 0).mean()) * 100.0),
+        avg_profit_abs=("profit_abs", "mean"),
+        max_single_trade_profit=("profit_abs", "max"),
+        max_single_trade_loss=("profit_abs", "min"),
+    )
+    return result.reset_index()[output_columns]
+
+
+def write_breakdown_outputs(trades: pd.DataFrame, args: argparse.Namespace) -> None:
+    outputs = {
+        "pair": Path(args.pair_breakdown_csv),
+        "year": Path(args.year_breakdown_csv),
+        "month": Path(args.month_breakdown_csv),
+        "exit_reason": Path(args.exit_reason_breakdown_csv),
+    }
+    for group_column, path in outputs.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        aggregate_breakdown(trades, group_column).to_csv(path, index=False, float_format="%.6g", lineterminator="\n")
+
+
+def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Namespace, metadata: dict[str, Any]) -> None:
     output_csv = Path(args.output_csv)
     output_md = Path(args.output_md)
     trades_csv = Path(args.trades_csv)
-    for path in (output_csv, output_md, trades_csv):
+    metadata_json = Path(args.metadata_json)
+    for path in (output_csv, output_md, trades_csv, metadata_json):
         path.parent.mkdir(parents=True, exist_ok=True)
 
     summary.to_csv(output_csv, index=False, float_format="%.6g", lineterminator="\n")
-    if not trades.empty:
-        trades.to_csv(trades_csv, index=False, float_format="%.6g", lineterminator="\n")
+    trades.to_csv(trades_csv, index=False, float_format="%.6g", lineterminator="\n")
+    write_breakdown_outputs(trades, args)
+    metadata_json.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8", newline="\n")
 
     decision_counts = (
         summary["decision"].value_counts().rename_axis("decision").reset_index(name="runs")
@@ -352,13 +742,15 @@ def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Na
         "strategy_class",
         "canonical_fixed_candidate_id",
         "exit_mode",
+        "cost_scenario",
         "status",
         "trades",
         "profit_usdt",
         "profit_pct",
         "max_drawdown_pct",
         "validation_trades",
-        "validation_profit_pct",
+        "validation_profit_usdt",
+        "validation_profit_pct_of_starting_balance",
         "profit_after_20bps_cost_proxy",
         "top_pair_profit_share",
         "top_year_profit_share",
@@ -375,8 +767,30 @@ def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Na
         f"- Manifest: `{args.manifest}`",
         f"- Config: `{args.config}`",
         f"- Timerange: `{args.timerange}`",
+        f"- Export mode: `{args.export_mode}`",
+        f"- Fee scenarios: `{', '.join(args.fee_scenarios)}`",
         f"- Plan only: `{args.plan_only}`",
         f"- Runs: `{len(summary)}`",
+        f"- Manifest rows: `{metadata['manifest_row_count']}`",
+        f"- Exit modes: `{metadata['exit_mode_count']}`",
+        f"- Strategy classes: `{metadata['strategy_class_count']}`",
+        f"- Manifest SHA256: `{metadata['manifest_sha256']}`",
+        f"- Strategy file SHA256: `{metadata['strategy_file_sha256']}`",
+        f"- Config SHA256: `{metadata['config_sha256']}`",
+        f"- Git commit: `{metadata['git_commit']}`",
+        f"- Git worktree dirty at run time: `{metadata['git_worktree_dirty']}`",
+        f"- Freqtrade version: `{metadata['freqtrade_version']}`",
+        f"- Discovery status: `{metadata.get('strategy_discovery_status', '')}`",
+        "",
+        "## Artifacts",
+        "",
+        f"- Metadata: `{args.metadata_json}`",
+        f"- Trades: `{args.trades_csv}`",
+        f"- Pair breakdown: `{args.pair_breakdown_csv}`",
+        f"- Year breakdown: `{args.year_breakdown_csv}`",
+        f"- Month breakdown: `{args.month_breakdown_csv}`",
+        f"- Exit reason breakdown: `{args.exit_reason_breakdown_csv}`",
+        f"- Strategy discovery: `{args.discovery_output}`",
         "",
         "## Decision Counts",
         "",
@@ -392,7 +806,8 @@ def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Na
         f"- validation_trades >= `{args.min_validation_trades}`",
         f"- active_pairs >= `{args.min_active_pairs}`",
         f"- active_years >= `{args.min_active_years}`",
-        f"- validation_profit_pct > `0`",
+        f"- validation_profit_usdt > `0`",
+        f"- validation_profit_pct_of_starting_balance > `0`",
         f"- profit_after_top_5_trade_removal > `0`",
         f"- profit_after_fee_2x > `0`",
         f"- profit_after_20bps_cost_proxy > `0`",
@@ -407,10 +822,14 @@ def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Na
 def main() -> None:
     args = parse_args()
     manifest = load_manifest(Path(args.manifest), args.candidate_ids)
-    matrix = build_matrix(manifest, args.exit_labels, args.max_runs)
+    matrix = build_matrix(manifest, args.exit_labels, args.fee_scenarios, args.max_runs)
+    metadata = build_metadata(args, manifest, matrix)
+    metadata.update(write_strategy_discovery(args, matrix, metadata))
+
     if args.plan_only:
-        planned = matrix.assign(status="planned", decision="NOT_RUN_PLAN_ONLY")
-        write_outputs(planned, pd.DataFrame(), args)
+        planned = matrix.assign(status="planned", decision="NOT_RUN_PLAN_ONLY", export_mode=args.export_mode)
+        planned = add_metadata_columns(planned, metadata)
+        write_outputs(planned, pd.DataFrame(), args, metadata)
         print(f"Wrote plan-only matrix to {args.output_md}")
         return
 
@@ -423,8 +842,9 @@ def main() -> None:
             trade_frames.append(trades)
 
     summary = pd.DataFrame(rows)
+    summary = add_metadata_columns(summary, metadata)
     trades = pd.concat(trade_frames, ignore_index=True, sort=False) if trade_frames else pd.DataFrame()
-    write_outputs(summary, trades, args)
+    write_outputs(summary, trades, args, metadata)
     print(f"Wrote backtest summary to {args.output_md}")
 
 

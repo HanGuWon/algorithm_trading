@@ -91,6 +91,8 @@ DEFAULT_CANDIDATES: list[dict[str, Any]] = [
     },
 ]
 
+ALLOW_DEFAULT_CANDIDATES = False
+
 EXIT_MODES: dict[str, dict[str, Any]] = {
     "Hold24h": {"exit_mode": "hold_24h", "max_hold_hours": 24},
     "Hold72h": {"exit_mode": "hold_72h", "max_hold_hours": 72},
@@ -129,7 +131,12 @@ def safe_int(value: Any, default: int = 0) -> int:
 
 def load_manifest_candidates(path: Path = MANIFEST_PATH) -> list[dict[str, Any]]:
     if not path.exists():
-        return DEFAULT_CANDIDATES
+        if ALLOW_DEFAULT_CANDIDATES:
+            return DEFAULT_CANDIDATES
+        raise FileNotFoundError(
+            f"Missing canonical immediate-flush manifest: {path}. "
+            "Run scripts/build_major_11_immediate_flush_canonical_manifest.py first."
+        )
 
     candidates: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8", newline="") as handle:
@@ -146,7 +153,11 @@ def load_manifest_candidates(path: Path = MANIFEST_PATH) -> list[dict[str, Any]]
                     "require_close_below_bb": as_bool(row["require_close_below_bb"]),
                 }
             )
-    return candidates or DEFAULT_CANDIDATES
+    if candidates:
+        return candidates
+    if ALLOW_DEFAULT_CANDIDATES:
+        return DEFAULT_CANDIDATES
+    raise ValueError(f"Canonical immediate-flush manifest has no candidates: {path}")
 
 
 class ImmediateFlushResearchBase(VolatilityRotationMRDiagnosticLongOnly):
@@ -174,6 +185,7 @@ class ImmediateFlushResearchBase(VolatilityRotationMRDiagnosticLongOnly):
     minimal_roi = {"0": 100.0}
 
     canonical_fixed_candidate_id = "BASE"
+    fixed_leverage = 1.0
     price_z_threshold_value = 3.1
     rsi_threshold_value = 26
     vol_z_min_value = 1.0
@@ -187,6 +199,36 @@ class ImmediateFlushResearchBase(VolatilityRotationMRDiagnosticLongOnly):
     @property
     def protections(self) -> list[dict[str, Any]]:
         return []
+
+    def leverage(
+        self,
+        pair: str,
+        current_time,
+        current_rate: float,
+        proposed_leverage: float,
+        max_leverage: float,
+        entry_tag: str | None,
+        side: str,
+        **kwargs,
+    ) -> float:
+        _ = (pair, current_time, current_rate, proposed_leverage, max_leverage, entry_tag, side, kwargs)
+        return float(self.fixed_leverage)
+
+    def custom_stake_amount(
+        self,
+        pair: str,
+        current_time,
+        current_rate: float,
+        proposed_stake: float,
+        min_stake: float | None,
+        max_stake: float,
+        leverage: float,
+        entry_tag: str | None,
+        side: str,
+        **kwargs,
+    ) -> float:
+        _ = (pair, current_time, current_rate, min_stake, max_stake, leverage, entry_tag, side, kwargs)
+        return proposed_stake
 
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         _ = metadata
@@ -250,8 +292,12 @@ class ImmediateFlushResearchBase(VolatilityRotationMRDiagnosticLongOnly):
 
 
 def strategy_class_name(candidate_id: str, exit_label: str) -> str:
-    source_id = candidate_id.split("_", maxsplit=1)[0]
-    return f"ImmediateFlushResearch{source_id}{exit_label}"
+    safe_id = (
+        candidate_id.replace("_original", "")
+        .replace("_drop_breakout_block", "NoBreakout")
+        .replace("_", "")
+    )
+    return f"ImmediateFlushResearch{safe_id}{exit_label}"
 
 
 def build_strategy_class(candidate: dict[str, Any], exit_label: str, exit_spec: dict[str, Any]):
