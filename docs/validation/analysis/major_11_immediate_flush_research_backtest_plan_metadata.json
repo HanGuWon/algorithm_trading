@@ -9,7 +9,7 @@
     "base"
   ],
   "freqtrade_version": "unavailable: C:\\Users\\user\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe: No module named freqtrade",
-  "input_git_commit": "8a0d52f651f14369d23c1938f87abade7e7dd533",
+  "input_git_commit": "7aac853df7ace2a575dc67f0d2a8bf53e40bccdd",
   "input_git_worktree_dirty": true,
   "is_backtest_result": false,
   "manifest_row_count": 7,

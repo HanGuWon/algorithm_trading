@@ -19,19 +19,19 @@
 - Manifest SHA256: `5bbe6d9824c23d37bf19afb32acaeb4ccb77c3c40a68e1a321b4b388b11d347b`
 - Strategy file SHA256: `7aefbe0abb124037556afc35b4a89f4590e6bbfbde5c02150b5de2e821fa5d8c`
 - Config SHA256: `754a7276bf52e6904cbb07fd217662273306b6d5074b970b6eb991c04804ea48`
-- Input git commit: `8a0d52f651f14369d23c1938f87abade7e7dd533`
+- Input git commit: `7aac853df7ace2a575dc67f0d2a8bf53e40bccdd`
 - Input git worktree dirty at run time: `True`
 - Freqtrade version: `unavailable: C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe: No module named freqtrade`
 - Discovery status: `not_run_plan_only`
 
 ## Artifacts
 
-- Metadata: `docs/validation/analysis/major_11_immediate_flush_research_backtest_metadata.json`
-- Trades: `docs/validation/analysis/major_11_immediate_flush_research_backtest_trades.csv`
-- Pair breakdown: `docs/validation/analysis/major_11_immediate_flush_research_backtest_pair_breakdown.csv`
-- Year breakdown: `docs/validation/analysis/major_11_immediate_flush_research_backtest_year_breakdown.csv`
-- Month breakdown: `docs/validation/analysis/major_11_immediate_flush_research_backtest_month_breakdown.csv`
-- Exit reason breakdown: `docs/validation/analysis/major_11_immediate_flush_research_backtest_exit_reason_breakdown.csv`
+- Metadata: `docs\validation\analysis\major_11_immediate_flush_research_backtest_plan_metadata.json`
+- Trades: `docs\validation\analysis\major_11_immediate_flush_research_backtest_plan_trades.csv`
+- Pair breakdown: `docs\validation\analysis\major_11_immediate_flush_research_backtest_plan_pair_breakdown.csv`
+- Year breakdown: `docs\validation\analysis\major_11_immediate_flush_research_backtest_plan_year_breakdown.csv`
+- Month breakdown: `docs\validation\analysis\major_11_immediate_flush_research_backtest_plan_month_breakdown.csv`
+- Exit reason breakdown: `docs\validation\analysis\major_11_immediate_flush_research_backtest_plan_exit_reason_breakdown.csv`
 - Strategy discovery: `docs/validation/analysis/major_11_immediate_flush_strategy_discovery.txt`
 
 ## Decision Counts

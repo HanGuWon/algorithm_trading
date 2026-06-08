@@ -93,28 +93,60 @@ def parse_args() -> argparse.Namespace:
         default="docs/validation/analysis/major_11_immediate_flush_research_backtest_summary.md",
     )
     parser.add_argument(
+        "--plan-output-csv",
+        default="docs/validation/analysis/major_11_immediate_flush_research_backtest_plan_summary.csv",
+    )
+    parser.add_argument(
+        "--plan-output-md",
+        default="docs/validation/analysis/major_11_immediate_flush_research_backtest_plan_summary.md",
+    )
+    parser.add_argument(
         "--trades-csv",
         default="docs/validation/analysis/major_11_immediate_flush_research_backtest_trades.csv",
+    )
+    parser.add_argument(
+        "--plan-trades-csv",
+        default="docs/validation/analysis/major_11_immediate_flush_research_backtest_plan_trades.csv",
     )
     parser.add_argument(
         "--pair-breakdown-csv",
         default="docs/validation/analysis/major_11_immediate_flush_research_backtest_pair_breakdown.csv",
     )
     parser.add_argument(
+        "--plan-pair-breakdown-csv",
+        default="docs/validation/analysis/major_11_immediate_flush_research_backtest_plan_pair_breakdown.csv",
+    )
+    parser.add_argument(
         "--year-breakdown-csv",
         default="docs/validation/analysis/major_11_immediate_flush_research_backtest_year_breakdown.csv",
+    )
+    parser.add_argument(
+        "--plan-year-breakdown-csv",
+        default="docs/validation/analysis/major_11_immediate_flush_research_backtest_plan_year_breakdown.csv",
     )
     parser.add_argument(
         "--month-breakdown-csv",
         default="docs/validation/analysis/major_11_immediate_flush_research_backtest_month_breakdown.csv",
     )
     parser.add_argument(
+        "--plan-month-breakdown-csv",
+        default="docs/validation/analysis/major_11_immediate_flush_research_backtest_plan_month_breakdown.csv",
+    )
+    parser.add_argument(
         "--exit-reason-breakdown-csv",
         default="docs/validation/analysis/major_11_immediate_flush_research_backtest_exit_reason_breakdown.csv",
     )
     parser.add_argument(
+        "--plan-exit-reason-breakdown-csv",
+        default="docs/validation/analysis/major_11_immediate_flush_research_backtest_plan_exit_reason_breakdown.csv",
+    )
+    parser.add_argument(
         "--metadata-json",
         default="docs/validation/analysis/major_11_immediate_flush_research_backtest_metadata.json",
+    )
+    parser.add_argument(
+        "--plan-metadata-json",
+        default="docs/validation/analysis/major_11_immediate_flush_research_backtest_plan_metadata.json",
     )
     parser.add_argument(
         "--discovery-output",
@@ -128,10 +160,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fee-scenarios", nargs="+", default=["base"], choices=list(FEE_SCENARIOS))
     parser.add_argument("--export-mode", default="trades", choices=["trades", "signals"])
     parser.add_argument("--plan-only", action="store_true")
+    parser.add_argument("--discovery-only", action="store_true")
     parser.add_argument(
         "--allow-dirty-execution",
         action="store_true",
         help="Allow real backtests from a dirty worktree. Ignored by --plan-only.",
+    )
+    parser.add_argument(
+        "--allow-discovery-failure",
+        action="store_true",
+        help="Allow real backtests even when strategy discovery did not pass.",
     )
     parser.add_argument("--skip-discovery", action="store_true")
     parser.add_argument("--max-runs", type=int, default=0, help="Optional smoke-test limit after matrix creation.")
@@ -307,6 +345,22 @@ def add_metadata_columns(frame: pd.DataFrame, metadata: dict[str, Any]) -> pd.Da
     for key in ROW_METADATA_KEYS:
         frame[key] = metadata.get(key, "")
     return frame
+
+
+def selected_output_paths(args: argparse.Namespace) -> dict[str, Path]:
+    plan = bool(args.plan_only)
+    return {
+        "output_csv": Path(args.plan_output_csv if plan else args.output_csv),
+        "output_md": Path(args.plan_output_md if plan else args.output_md),
+        "trades_csv": Path(args.plan_trades_csv if plan else args.trades_csv),
+        "pair_breakdown_csv": Path(args.plan_pair_breakdown_csv if plan else args.pair_breakdown_csv),
+        "year_breakdown_csv": Path(args.plan_year_breakdown_csv if plan else args.year_breakdown_csv),
+        "month_breakdown_csv": Path(args.plan_month_breakdown_csv if plan else args.month_breakdown_csv),
+        "exit_reason_breakdown_csv": Path(
+            args.plan_exit_reason_breakdown_csv if plan else args.exit_reason_breakdown_csv
+        ),
+        "metadata_json": Path(args.plan_metadata_json if plan else args.metadata_json),
+    }
 
 
 def write_strategy_discovery(args: argparse.Namespace, matrix: pd.DataFrame, metadata: dict[str, Any]) -> dict[str, Any]:
@@ -719,12 +773,12 @@ def aggregate_breakdown(trades: pd.DataFrame, group_column: str) -> pd.DataFrame
     return result.reset_index()[output_columns]
 
 
-def write_breakdown_outputs(trades: pd.DataFrame, args: argparse.Namespace) -> None:
+def write_breakdown_outputs(trades: pd.DataFrame, args: argparse.Namespace, paths: dict[str, Path]) -> None:
     outputs = {
-        "pair": Path(args.pair_breakdown_csv),
-        "year": Path(args.year_breakdown_csv),
-        "month": Path(args.month_breakdown_csv),
-        "exit_reason": Path(args.exit_reason_breakdown_csv),
+        "pair": paths["pair_breakdown_csv"],
+        "year": paths["year_breakdown_csv"],
+        "month": paths["month_breakdown_csv"],
+        "exit_reason": paths["exit_reason_breakdown_csv"],
     }
     for group_column, path in outputs.items():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -748,10 +802,11 @@ def plan_only_artifact_frame(artifact: str) -> pd.DataFrame:
 
 
 def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Namespace, metadata: dict[str, Any]) -> None:
-    output_csv = Path(args.output_csv)
-    output_md = Path(args.output_md)
-    trades_csv = Path(args.trades_csv)
-    metadata_json = Path(args.metadata_json)
+    paths = selected_output_paths(args)
+    output_csv = paths["output_csv"]
+    output_md = paths["output_md"]
+    trades_csv = paths["trades_csv"]
+    metadata_json = paths["metadata_json"]
     for path in (output_csv, output_md, trades_csv, metadata_json):
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -760,7 +815,7 @@ def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Na
         plan_only_artifact_frame("trades").to_csv(trades_csv, index=False, lineterminator="\n")
     else:
         trades.to_csv(trades_csv, index=False, float_format="%.6g", lineterminator="\n")
-    write_breakdown_outputs(trades, args)
+    write_breakdown_outputs(trades, args, paths)
     metadata_json.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8", newline="\n")
 
     decision_counts = (
@@ -818,12 +873,12 @@ def write_outputs(summary: pd.DataFrame, trades: pd.DataFrame, args: argparse.Na
         "",
         "## Artifacts",
         "",
-        f"- Metadata: `{args.metadata_json}`",
-        f"- Trades: `{args.trades_csv}`",
-        f"- Pair breakdown: `{args.pair_breakdown_csv}`",
-        f"- Year breakdown: `{args.year_breakdown_csv}`",
-        f"- Month breakdown: `{args.month_breakdown_csv}`",
-        f"- Exit reason breakdown: `{args.exit_reason_breakdown_csv}`",
+        f"- Metadata: `{metadata_json}`",
+        f"- Trades: `{trades_csv}`",
+        f"- Pair breakdown: `{paths['pair_breakdown_csv']}`",
+        f"- Year breakdown: `{paths['year_breakdown_csv']}`",
+        f"- Month breakdown: `{paths['month_breakdown_csv']}`",
+        f"- Exit reason breakdown: `{paths['exit_reason_breakdown_csv']}`",
         f"- Strategy discovery: `{args.discovery_output}`",
         "",
         "## Decision Counts",
@@ -869,6 +924,20 @@ def main() -> None:
     metadata = build_metadata(args, manifest, matrix)
     metadata.update(write_strategy_discovery(args, matrix, metadata))
 
+    if args.discovery_only:
+        if (
+            not args.skip_discovery
+            and metadata.get("strategy_discovery_status") != "pass"
+            and not args.allow_discovery_failure
+        ):
+            raise SystemExit(
+                "Strategy discovery failed; refusing discovery-only success. "
+                f"status={metadata.get('strategy_discovery_status')}, "
+                f"missing={metadata.get('strategy_discovery_missing_count')}"
+            )
+        print(f"Wrote strategy discovery to {args.discovery_output}")
+        return
+
     if args.plan_only:
         planned = matrix.assign(
             status="planned",
@@ -880,8 +949,19 @@ def main() -> None:
         )
         planned = add_metadata_columns(planned, metadata)
         write_outputs(planned, pd.DataFrame(), args, metadata)
-        print(f"Wrote plan-only matrix to {args.output_md}")
+        print(f"Wrote plan-only matrix to {selected_output_paths(args)['output_md']}")
         return
+
+    if (
+        not args.skip_discovery
+        and metadata.get("strategy_discovery_status") != "pass"
+        and not args.allow_discovery_failure
+    ):
+        raise SystemExit(
+            "Strategy discovery failed; refusing real backtest. "
+            f"status={metadata.get('strategy_discovery_status')}, "
+            f"missing={metadata.get('strategy_discovery_missing_count')}"
+        )
 
     if metadata["input_git_worktree_dirty"] and not args.allow_dirty_execution:
         raise SystemExit(
@@ -904,7 +984,7 @@ def main() -> None:
     summary = add_metadata_columns(summary, metadata)
     trades = pd.concat(trade_frames, ignore_index=True, sort=False) if trade_frames else pd.DataFrame()
     write_outputs(summary, trades, args, metadata)
-    print(f"Wrote backtest summary to {args.output_md}")
+    print(f"Wrote backtest summary to {selected_output_paths(args)['output_md']}")
 
 
 if __name__ == "__main__":

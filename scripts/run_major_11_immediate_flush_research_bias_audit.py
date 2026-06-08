@@ -71,6 +71,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--strategy-classes", nargs="+", default=[])
     parser.add_argument("--strict-all", action="store_true", help="Audit all manifest x exit-mode strategy classes.")
     parser.add_argument("--plan-only", action="store_true")
+    parser.add_argument("--require-runtime", action="store_true")
     parser.add_argument("--write-placeholder-results", action="store_true")
     parser.add_argument("--max-recursive-variance-pct", type=float, default=0.0)
     return parser.parse_args()
@@ -212,6 +213,7 @@ def classify_lookahead_result(row: dict[str, Any], completed: subprocess.Complet
         **row,
         "exit_code": completed.returncode,
         "has_bias": "",
+        "total_signals": "",
         "biased_entry_signals": "",
         "biased_exit_signals": "",
         "recursive_max_variance_pct": "",
@@ -228,11 +230,25 @@ def classify_lookahead_result(row: dict[str, Any], completed: subprocess.Complet
     except (OSError, pd.errors.ParserError) as exc:
         return {**result, "status": "schema_fail", "decision": f"LOOKAHEAD_EXPORT_PARSE_FAIL:{type(exc).__name__}"}
 
-    known_columns = {"has_bias", "biased_entry_signals", "biased_exit_signals"}
-    if not known_columns.intersection(frame.columns):
-        return {**result, "status": "schema_fail", "decision": "LOOKAHEAD_EXPORT_SCHEMA_FAIL"}
+    required_columns = {"has_bias", "total_signals", "biased_entry_signals", "biased_exit_signals"}
+    missing = sorted(required_columns - set(frame.columns))
+    if missing:
+        return {
+            **result,
+            "status": "schema_fail",
+            "decision": f"LOOKAHEAD_EXPORT_SCHEMA_FAIL:missing={missing}",
+        }
 
-    has_bias = bool(truthy_series(frame["has_bias"]).any()) if "has_bias" in frame else False
+    total_signals = numeric_sum(frame, "total_signals")
+    if total_signals <= 0:
+        return {
+            **result,
+            "status": "inconclusive_insufficient_signals",
+            "decision": "LOOKAHEAD_NO_SIGNALS_VERIFIED",
+            "total_signals": total_signals,
+        }
+
+    has_bias = bool(truthy_series(frame["has_bias"]).any())
     biased_entry = numeric_sum(frame, "biased_entry_signals")
     biased_exit = numeric_sum(frame, "biased_exit_signals")
     status = "fail" if has_bias or biased_entry > 0 or biased_exit > 0 else "pass"
@@ -242,6 +258,7 @@ def classify_lookahead_result(row: dict[str, Any], completed: subprocess.Complet
         "status": status,
         "decision": decision,
         "has_bias": has_bias,
+        "total_signals": total_signals,
         "biased_entry_signals": biased_entry,
         "biased_exit_signals": biased_exit,
     }
@@ -251,10 +268,13 @@ def recursive_variances(log_text: str) -> list[float]:
     variances: list[float] = []
     for line in log_text.splitlines():
         lowered = line.lower()
-        if "variance" not in lowered and "var %" not in lowered and "variance %" not in lowered:
+        if "variance" not in lowered and "%" not in line:
             continue
-        for value in re.findall(r"[-+]?\d+(?:\.\d+)?", line):
-            variances.append(abs(float(value)))
+        for token in re.findall(r"[-+]?\d+(?:\.\d+)?%", line):
+            try:
+                variances.append(abs(float(token.rstrip("%"))))
+            except ValueError:
+                continue
     return variances
 
 
@@ -268,6 +288,7 @@ def classify_recursive_result(
         **row,
         "exit_code": completed.returncode,
         "has_bias": "",
+        "total_signals": "",
         "biased_entry_signals": "",
         "biased_exit_signals": "",
         "recursive_max_variance_pct": "",
@@ -331,6 +352,7 @@ def build_plan(args: argparse.Namespace, selected_classes: list[str]) -> pd.Data
                     "log": str(log_path),
                     "command": "\t".join(command),
                     "has_bias": "",
+                    "total_signals": "",
                     "biased_entry_signals": "",
                     "biased_exit_signals": "",
                     "recursive_max_variance_pct": "",
@@ -362,6 +384,7 @@ def write_outputs(args: argparse.Namespace, frame: pd.DataFrame, selected_classe
         "status",
         "decision",
         "has_bias",
+        "total_signals",
         "biased_entry_signals",
         "biased_exit_signals",
         "recursive_max_variance_pct",
@@ -415,6 +438,8 @@ def main() -> None:
     if not freqtrade_available(args):
         unavailable = plan.assign(status="fail", decision="FREQTRADE_UNAVAILABLE", exit_code="")
         write_outputs(args, unavailable, selected_classes, all_classes)
+        if args.require_runtime:
+            raise SystemExit("Freqtrade runtime is required but unavailable.")
         print(f"Wrote bias-audit unavailable result to {args.output_md}")
         return
 

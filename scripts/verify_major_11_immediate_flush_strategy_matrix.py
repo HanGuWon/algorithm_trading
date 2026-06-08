@@ -43,6 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--strategy-path", default="user_data/strategies")
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--expected-manifest-rows", type=int, default=7)
+    parser.add_argument("--require-runtime", action="store_true")
     parser.add_argument(
         "--output-csv",
         default="docs/validation/analysis/major_11_immediate_flush_strategy_matrix_verification.csv",
@@ -272,6 +273,9 @@ def main() -> None:
     rows.append(run_freqtrade_discovery(args, expected_classes))
     frame = pd.DataFrame(rows)
     write_outputs(args, frame, expected_classes)
+    if args.require_runtime and not frame["status"].eq("pass").all():
+        counts = frame["status"].value_counts().to_dict()
+        raise SystemExit(f"Runtime verification did not fully pass: {counts}")
     print(f"Wrote strategy matrix verification to {args.output_md}")
 
 
